@@ -34,8 +34,6 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state_e
 
 resource "aws_dynamodb_table" "terraform_state_lock" {
   name           = var.state_lock_db_name
-  read_capacity  = 1
-  write_capacity = 1
   hash_key       = "LockID"
   billing_mode   = "PAY_PER_REQUEST"
 

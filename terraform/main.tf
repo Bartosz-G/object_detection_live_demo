@@ -19,5 +19,10 @@ provider "aws" {
 }
 
 
+module "remote-backed" {
+  source = "./remote_backend"
 
+  state_bucket_name = "terraform-state-tech-demo"
+  state_lock_db_name = "terraform-lock-tech-demo"
+}
 
