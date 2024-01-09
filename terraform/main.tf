@@ -18,6 +18,16 @@ provider "aws" {
     }
 }
 
+terraform {
+  backend "s3" {
+    bucket = "terraform-state-tech-demo"
+    key    = "object-detection-demo/terraform.tfstate"
+    region = "eu-west-2"
+    dynamodb_table = "terraform-lock-tech-demo"
+    encrypt = true
+  }
+}
+
 
 module "remote-backed" {
   source = "./remote_backend"
