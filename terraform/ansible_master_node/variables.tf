@@ -2,6 +2,10 @@ variable "vpc_id" {
   type = string
 }
 
+variable "subnet_id" {
+  type = string
+}
+
 variable "ansible_security_group_name" {
   type = string
   default = "ansible_sg"
@@ -24,4 +28,9 @@ variable "ansible_master_role_name" {
 variable "ansible_master_iam_name" {
   type = string
   default = "ansible_master_iam"
+}
+
+variable "ansible_master_instance_name" {
+  type = string
+  default = "ansible_master"
 }
