@@ -60,6 +60,7 @@ output "eoigw_id" {
 }
 
 # Output for Security Group
+/*
 output "security_group_id" {
   value = aws_security_group.ec2_sg.id
 }
@@ -67,6 +68,7 @@ output "security_group_id" {
 output "security_group_arn" {
   value = aws_security_group.ec2_sg.arn
 }
+*/
 
 
 

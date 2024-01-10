@@ -120,7 +120,8 @@ resource "aws_egress_only_internet_gateway" "eoigw" {
 
 
 # Security group for webrtc server
-# TODO: For prod modify the security of SSH
+# TODO: For prod modify the security of SSH, add VPN and/or whitelist IP's for access to SSH
+/*
 resource "aws_security_group" "ec2_sg" {
   name        = var.security_group_name
   description = "[NOT FOR PROD] Security group for testing code on EC2 instance, improve safety before production"
@@ -156,3 +157,5 @@ resource "aws_security_group" "ec2_sg" {
   }
 
 }
+
+*/

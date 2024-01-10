@@ -36,9 +36,15 @@ module "remote-backed" {
   state_lock_db_name = "terraform-lock-tech-demo"
 }
 
+
 module "network" {
   source = "./network"
 
   security_group_name = "tech_demo_security_group"
 }
+
+# TODO: Add WAF under the ALB for security (remember to route all traffic through ALB as not to access the EC2 itself)
+
+
+
 
