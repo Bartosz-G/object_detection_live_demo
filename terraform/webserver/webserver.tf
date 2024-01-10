@@ -44,12 +44,13 @@ resource "aws_iam_policy" "webserver_iam" {
     Statement = [
       {
         Action = [
-          "ec2:DescribeInstances",
-          "ec2:RebootInstances",
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
         ],
         Effect = "Allow",
-        Resource = "*"
-      },
+        Resource = "arn:aws:logs:*:*:*"
+      }
     ]
   })
 }
@@ -65,53 +66,17 @@ resource "aws_iam_instance_profile" "webserver_profile" {
 }
 
 
-resource "aws_security_group" "webserver_sg" {
-  name        = var.webserver_security_group_name
-  description = "[NOT FOR PROD] Security group for testing code on EC2 instance, improve safety before production"
-  vpc_id      = var.vpc_id
-
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-    ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # Optional: If you expect UDP traffic for WebRTC (e.g., for media streams)
-  ingress {
-    from_port   = 1024
-    to_port     = 65535
-    protocol    = "udp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-}
 
 resource "aws_instance" "webserver" {
   ami           = var.ami
   instance_type = var.instance_type
 
   iam_instance_profile = aws_iam_instance_profile.webserver_profile.name
-  vpc_security_group_ids = [aws_security_group.webserver_sg.id]
+  vpc_security_group_ids = [var.webserver_security_group]
   subnet_id = var.subnet_id
   key_name = aws_key_pair.webserver-key-pair.key_name
   associate_public_ip_address = true
 }
-
 
 
 
