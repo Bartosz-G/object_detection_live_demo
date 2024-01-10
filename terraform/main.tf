@@ -90,7 +90,26 @@ resource "aws_security_group" "webserver_sg" {
   }
 
 }
+module "webserver1" {
+  source = "./webserver"
 
+  vpc_id = module.network.vpc_id
+  subnet_id = module.network.public_subnet1_id
+  webserver_ssh_key_path = "./keys/webserver1"
+  webserver_security_group = aws_security_group.webserver_sg.id
+  ami = "ami-00efc25778562c229"
+  instance_type = "t4g.micro"
+}
+
+resource "ansible_host" "webserver1" {
+  name = module.webserver1.public_ip
+  groups = [ansible_group.webservers.name]
+}
+
+output "example_output" {
+  value = module.webserver1.public_ip
+  description = "The public IP address of the front-end facing webserver."
+}
 
 
 

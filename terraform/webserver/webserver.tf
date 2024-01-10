@@ -14,7 +14,7 @@ resource "aws_secretsmanager_secret_version" "ssh_key_version" {
 
 resource "aws_key_pair" "webserver-key-pair" {
   key_name   = "webserver_ssh_key_pair"
-  public_key = file(var.webserver_ssh_key_path)
+  public_key = file("${var.webserver_ssh_key_path}.pub")
 }
 
 
@@ -76,6 +76,13 @@ resource "aws_instance" "webserver" {
   subnet_id = var.subnet_id
   key_name = aws_key_pair.webserver-key-pair.key_name
   associate_public_ip_address = true
+
+      user_data = <<-EOF
+                #!/bin/bash
+                sudo apt-get update
+                sudo apt-get install -y curl
+              EOF
+
 }
 
 
