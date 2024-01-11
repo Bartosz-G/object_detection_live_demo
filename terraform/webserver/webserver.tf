@@ -2,6 +2,7 @@ data "local_file" "webserver_ssh_key_local" {
   filename = var.webserver_ssh_key_path
 }
 
+/*
 resource "aws_secretsmanager_secret" "webserver-ssh-secret" {
   name        = var.webserver_ssh_secret_name
   description = "SSH Key to access webserver"
@@ -11,6 +12,7 @@ resource "aws_secretsmanager_secret_version" "ssh_key_version" {
   secret_id     = aws_secretsmanager_secret.webserver-ssh-secret.id
   secret_string = jsonencode({"ssh-key" : data.local_file.webserver_ssh_key_local.content})
 }
+*/
 
 resource "aws_key_pair" "webserver-key-pair" {
   key_name   = "webserver_ssh_key_pair"
