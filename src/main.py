@@ -9,3 +9,11 @@ print("GStreamer version:", Gst.version())
 
 Gst.init(None)
 
+app = FastAPI()
+pipeline = Gst.parse_launch("webrtcbin name=webrtcbin ! vp8dec ! videoconvert ! autovideosink")
+
+
+@app.get("/")
+async def simple_response():
+    return {"Hello": "from server"}
+
