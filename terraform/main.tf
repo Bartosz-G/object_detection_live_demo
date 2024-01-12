@@ -43,10 +43,6 @@ module "remote-backed" {
 }
 
 
-resource "ansible_group" "webservers" {
-  name = "webservers"
-}
-
 
 module "network" {
   source = "./network"
@@ -101,10 +97,6 @@ module "webserver1" {
   instance_type = "t4g.micro"
 }
 
-resource "ansible_host" "webserver1" {
-  name = module.webserver1.public_ip
-  groups = [ansible_group.webservers.name]
-}
 
 output "example_output" {
   value = module.webserver1.public_ip
@@ -112,6 +104,28 @@ output "example_output" {
 }
 
 
+resource "ansible_group" "webservers" {
+  name = "webservers"
+}
+
+resource "ansible_host" "webserver1" {
+  name = module.webserver1.public_ip
+  groups = [ansible_group.webservers.name]
+
+  variables = {
+    ansible_user = "ubuntu",
+    ansible_ssh_private_key_file = module.webserver1.webserver_ssh_key_path,
+    ansible_python_interpreter = "/usr/bin/python3"
+  }
+}
 
 
+resource "ansible_playbook" "setup_gstreamer" {
+  playbook   = "/ansible_playbooks/setup_gstreamer.yml"
+  name       = module.webserver1.public_ip
+  replayable = true
+  ignore_playbook_failure = true
 
+
+  depends_on = [module.webserver1]
+}
