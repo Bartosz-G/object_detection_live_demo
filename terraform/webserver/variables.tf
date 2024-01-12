@@ -14,6 +14,10 @@ variable "webserver_security_group" {
   type = string
 }
 
+variable "source_code_s3_arn" {
+  type = string
+}
+
 variable "ami" {
   type = string
   default = "ami-00efc25778562c229" //Ubuntu

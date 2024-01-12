@@ -100,6 +100,7 @@ module "webserver1" {
   subnet_id = module.network.public_subnet1_id
   webserver_ssh_key_path = "./keys/webserver1"
   webserver_security_group = aws_security_group.webserver_sg.id
+  source_code_s3_arn = module.s3_code_files.arn
   ami = "ami-00efc25778562c229"
   instance_type = "t4g.micro"
 }

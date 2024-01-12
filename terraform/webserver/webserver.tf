@@ -52,6 +52,13 @@ resource "aws_iam_policy" "webserver_iam" {
         ],
         Effect = "Allow",
         Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Action = [
+          "s3:GetObject",
+        ],
+        Effect = "Allow",
+        Resource = "${var.source_code_s3_arn}"
       }
     ]
   })
