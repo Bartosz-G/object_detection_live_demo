@@ -35,11 +35,6 @@
           - python3-pip
         state: present
 
-    - name: Create a Python virtual environment
-      ansible.builtin.command:
-        cmd: python3 -m venv gstreamer-venv
-        creates: gstreamer-venv
-
     - name: Install additional dependencies
       ansible.builtin.apt:
         name:
@@ -63,3 +58,10 @@
         post_reboot_delay: 30
         test_command: uptime
       when: reboot_required.stat.exists
+
+    - name: Create a Python virtual environment
+      ansible.builtin.command:
+        cmd: python3 -m venv gstreamer-venv
+        creates: gstreamer-venv
+
+

@@ -122,7 +122,7 @@ resource "ansible_host" "webserver1" {
 
 resource "ansible_playbook" "setup_gstreamer" {
   playbook   = "/ansible_playbooks/setup_gstreamer.yml"
-  name       = module.webserver1.public_ip
+  name       = ansible_group.webservers.name
   replayable = true
   ignore_playbook_failure = true
 
