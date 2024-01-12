@@ -44,6 +44,12 @@
           - libgirepository1.0-dev
         state: present
 
+    - name: Install GStreamer Python bindings for Python 3
+      ansible.builtin.apt:
+        name: python3-gst-1.0
+        state: present
+        update_cache: yes
+
     - name: Check if a reboot is needed
       stat:
         path: /var/run/reboot-required
@@ -63,5 +69,17 @@
       ansible.builtin.command:
         cmd: python3 -m venv gstreamer-venv
         creates: gstreamer-venv
+
+    - name: Create a Python virtual environment
+      ansible.builtin.command:
+        cmd: python3 -m venv /home/ubuntu/gstreamer-venv
+        creates: /home/ubuntu/gstreamer-venv
+
+    - name: Change ownership of the virtual environment
+      ansible.builtin.file:
+        path: /home/ubuntu/gstreamer-venv
+        owner: ubuntu
+        group: ubuntu
+        recurse: yes
 
 

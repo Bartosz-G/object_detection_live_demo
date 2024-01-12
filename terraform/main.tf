@@ -50,6 +50,13 @@ module "network" {
   security_group_name = "tech_demo_security_group"
 }
 
+module "s3_code_files" {
+  source = "./s3_code_files"
+
+  local_files_path = "../src"
+  bucket_name = "object-detection-tech-demo-code"
+}
+
 # TODO: Add WAF under the ALB for security (remember to route all traffic through ALB as not to access the EC2 itself)
 # TODO: Improve security, limit ip adresses for SSH
 resource "aws_security_group" "webserver_sg" {
@@ -97,12 +104,10 @@ module "webserver1" {
   instance_type = "t4g.micro"
 }
 
-
-output "example_output" {
+output "webserver_ip" {
   value = module.webserver1.public_ip
   description = "The public IP address of the front-end facing webserver."
 }
-
 
 resource "ansible_group" "webservers" {
   name = "webservers"
