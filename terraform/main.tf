@@ -57,6 +57,10 @@ module "s3_code_files" {
   bucket_name = "object-detection-tech-demo-code"
 }
 
+output "bucket-name" {
+  value = module.s3_code_files.name
+}
+
 # TODO: Add WAF under the ALB for security (remember to route all traffic through ALB as not to access the EC2 itself)
 # TODO: Improve security, limit ip adresses for SSH
 resource "aws_security_group" "webserver_sg" {
@@ -122,6 +126,7 @@ resource "ansible_host" "webserver1" {
     ansible_user = "ubuntu",
     ansible_ssh_private_key_file = module.webserver1.webserver_ssh_key_path,
     ansible_python_interpreter = "/usr/bin/python3"
+    s3_code_files = module.s3_code_files.id
   }
 }
 

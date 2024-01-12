@@ -39,7 +39,7 @@ resource "aws_iam_role" "webserver_role" {
 
 resource "aws_iam_policy" "webserver_iam" {
   name        = var.webserver_iam_name
-  description = "Policy for Ansible master node to manage EC2 instances"
+  description = "Policy for object detection tech demo EC2 instances"
 
   policy = jsonencode({
     Version = "2012-10-17",
@@ -58,11 +58,12 @@ resource "aws_iam_policy" "webserver_iam" {
           "s3:GetObject",
         ],
         Effect = "Allow",
-        Resource = "${var.source_code_s3_arn}"
+        Resource = var.source_code_s3_arn
       }
     ]
   })
 }
+
 
 resource "aws_iam_role_policy_attachment" "webserver_policy_attachment" {
   role       = aws_iam_role.webserver_role.name

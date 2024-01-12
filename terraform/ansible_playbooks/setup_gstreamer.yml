@@ -82,4 +82,28 @@
         group: ubuntu
         recurse: yes
 
+    - name: Install unzip
+      ansible.builtin.apt:
+        name: unzip
+        state: present
+        update_cache: yes
+
+
+    - name: Download and install AWS CLI
+      ansible.builtin.shell:
+        cmd: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          sudo ./aws/install
+      args:
+        creates: "/usr/local/bin/aws"
+
+
+
+    - name: Synchronize contents from S3 bucket to src directory
+      ansible.builtin.command:
+        cmd: "aws s3 sync s3://{{ hostvars[inventory_hostname]['s3_code_files'] }} /home/ubuntu/src/"
+
+
+
 
