@@ -138,5 +138,5 @@ resource "ansible_playbook" "setup_gstreamer" {
   ignore_playbook_failure = true
 
 
-  depends_on = [module.webserver1]
+  depends_on = [module.webserver1, module.s3_code_files]
 }

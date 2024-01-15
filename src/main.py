@@ -9,8 +9,8 @@ from fastapi.staticfiles import StaticFiles
 
 app = FastAPI()
 
-templates = Jinja2Templates(directory="/home/ubuntu/src/templates")
-app.mount("/static", StaticFiles(directory="/home/ubuntu/src/static"), name="static")
+templates = Jinja2Templates(directory="/templates")
+app.mount("/static", StaticFiles(directory="/static"), name="static")
 
 Gst.init(None)
 # pipeline = Gst.parse_launch("webrtcbin name=webrtcbin ! vp8dec ! videoconvert ! autovideosink")
