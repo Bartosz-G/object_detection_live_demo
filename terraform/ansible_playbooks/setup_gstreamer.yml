@@ -13,12 +13,33 @@
       ansible.builtin.apt:
         upgrade: dist
 
+    - name: Install Python3, venv, and pip
+      ansible.builtin.apt:
+        name:
+          - python3-venv
+          - python3-pip
+          - pkg-config
+        state: present
+
+    - name: Install GStreamer Python bindings for Python 3
+      ansible.builtin.apt:
+        name:
+          - libcairo2-dev
+          - gcc
+          - python3-dev
+          - libgirepository1.0-dev
+          - python3-gst-1.0
+        state: present
+
     - name: Install GStreamer and base plugins
       ansible.builtin.apt:
         name:
+          - gir1.2-gst-plugins-bad-1.0
           - gstreamer1.0-plugins-base
           - gstreamer1.0-tools
           - gstreamer1.0-plugins-good
+          - gstreamer1.0-plugins-bad
+          - gstreamer1.0-nice
         state: present
 
     - name: Install GStreamer development packages
@@ -28,27 +49,6 @@
           - libgstreamer-plugins-base1.0-dev
         state: present
 
-    - name: Install Python3, venv, and pip
-      ansible.builtin.apt:
-        name:
-          - python3-venv
-          - python3-pip
-        state: present
-
-    - name: Install additional dependencies
-      ansible.builtin.apt:
-        name:
-          - libcairo2-dev
-          - pkg-config
-          - python3-dev
-          - libgirepository1.0-dev
-        state: present
-
-    - name: Install GStreamer Python bindings for Python 3
-      ansible.builtin.apt:
-        name: python3-gst-1.0
-        state: present
-        update_cache: yes
 
     - name: Check if a reboot is needed
       stat:
@@ -82,27 +82,6 @@
         group: ubuntu
         recurse: yes
 
-    - name: Install unzip
-      ansible.builtin.apt:
-        name: unzip
-        state: present
-        update_cache: yes
-
-
-    - name: Download and install AWS CLI
-      ansible.builtin.shell:
-        cmd: |
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          unzip awscliv2.zip
-          sudo ./aws/install
-      args:
-        creates: "/usr/local/bin/aws"
-
-
-
-    - name: Synchronize contents from S3 bucket to src directory
-      ansible.builtin.command:
-        cmd: "aws s3 sync s3://{{ hostvars[inventory_hostname]['s3_code_files'] }} /home/ubuntu/src/"
 
 
 
