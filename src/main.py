@@ -42,6 +42,23 @@ async def get(request: Request):
 @app.post("/offer")
 async def receive_offer(offer: Offer):
     print("Received offer:", offer.json())
+
+    try:
+        offer_sdp = offer.offer['offer']
+
+        print(f'{offer_sdp}')
+
+        res, message_from_back_end = GstSdp.SDPMessage.new()
+        GstSdp.sdp_message_parse_buffer(bytes(offer_sdp.encode()), message_from_back_end)
+        answer_sdp = GstWebRTC.WebRTCSessionDescription.new(GstWebRTC.WebRTCSDPType.ANSWER, message_from_back_end)
+
+        print('--------------------------------------------------')
+        print(f'Answer_sdp text: {answer_sdp.as_text()}')
+
+    except Exception as e:
+        print(e)
+        return {"status": 300}
+
     return {"status": 200}
 
 
