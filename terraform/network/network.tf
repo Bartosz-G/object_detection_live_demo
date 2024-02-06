@@ -84,19 +84,21 @@ resource "aws_subnet" "private2" {
 resource "aws_eip" "nat" {
   domain = "vpc"
 }
-
+/*
 resource "aws_nat_gateway" "nat_gw" {
   subnet_id     = aws_subnet.public1.id
   allocation_id = aws_eip.nat.id
 }
+*/
 
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.tech_demo_vpc.id
-
+/*
   route {
     cidr_block     = "0.0.0.0/0"
     nat_gateway_id = aws_nat_gateway.nat_gw.id
   }
+  */
 
   route {
     ipv6_cidr_block = "::/0"

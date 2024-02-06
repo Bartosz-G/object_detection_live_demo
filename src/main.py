@@ -22,7 +22,7 @@ app.mount("/static", StaticFiles(directory="/home/ubuntu/src/static"), name="sta
 Gst.init(None)
 
 pipeline = Gst.parse_launch(
-    "webrtcbin name=webrtcbin ! decodebin name=decoder ! queue name=queue ! videoscale name=videoscale ! "
+    "webrtcbin name=webrtcbin stun-server=stun://stun.l.google.com:19302 ! decodebin name=decoder ! queue name=queue ! videoscale name=videoscale ! "
     "capsfilter name=capsfilter ! videoconvert name=convert"
 )
 webrtcbin = pipeline.get_by_name("webrtcbin")
@@ -41,19 +41,25 @@ async def get(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 @app.post("/offer")
 async def receive_offer(offer: Offer):
-    print("Received offer:", offer.json())
+    print("Offer.json() :", offer.json())
 
     try:
-        offer_sdp = offer.offer['offer']
+        offer_sdp = offer.offer['sdp']
 
-        print(f'{offer_sdp}')
+        print(f'offer.offer["offer"]: {offer_sdp}')
 
         res, message_from_back_end = GstSdp.SDPMessage.new()
         GstSdp.sdp_message_parse_buffer(bytes(offer_sdp.encode()), message_from_back_end)
         answer_sdp = GstWebRTC.WebRTCSessionDescription.new(GstWebRTC.WebRTCSDPType.ANSWER, message_from_back_end)
 
         print('--------------------------------------------------')
-        print(f'Answer_sdp text: {answer_sdp.as_text()}')
+
+
+
+        print(f'Dir: {dir(answer_sdp.sdp.get_connection)}')
+
+        print(f'get_connection.get_attribute: {answer_sdp.sdp.get_connection.get_arguments()}')
+        print(f'Answer methods: {dir(answer_sdp.sdp)}')
 
     except Exception as e:
         print(e)

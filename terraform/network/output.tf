@@ -49,10 +49,12 @@ output "private_subnet2_arn" {
   value = aws_subnet.private2.arn
 }
 
+/*
 # Output for NAT Gateway
 output "nat_gateway_id" {
   value = aws_nat_gateway.nat_gw.id
 }
+*/
 
 # Output for Egress Only Internet Gateway
 output "eoigw_id" {
