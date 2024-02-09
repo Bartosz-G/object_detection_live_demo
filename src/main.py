@@ -5,7 +5,7 @@ gi.require_version('GstWebRTC', '1.0')
 from gi.repository import GstWebRTC
 gi.require_version('GstSdp', '1.0')
 from gi.repository import GstSdp
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, WebSocket
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -20,52 +20,52 @@ app.mount("/static", StaticFiles(directory="/home/ubuntu/src/static"), name="sta
 
 
 Gst.init(None)
+websocket_connection = None
+
+
+def on_negotiation_needed(*args):
+    assert websocket_connection, "on_negotiation was called before websocket_connection was created"
+    print("on_negotiation_needed was called: ", args)
+    websocket_connection.send_text('waitingForOffer')
+
+
+def send_ice_candidate_message(self, _, mlineindex, candidate):
+    assert websocket_connection, f"send_ice_candidate_message was called before websocket_connection was created! \n candidate: {candidate} \n mlineindex: {mlineindex}"
+    icemsg = json.dumps({'ice': {'candidate': candidate, 'sdpMLineIndex': mlineindex}})
+
 
 pipeline = Gst.parse_launch(
     "webrtcbin name=webrtcbin stun-server=stun://stun.l.google.com:19302 ! decodebin name=decoder ! queue name=queue ! videoscale name=videoscale ! "
     "capsfilter name=capsfilter ! videoconvert name=convert"
 )
 webrtcbin = pipeline.get_by_name("webrtcbin")
-
-res, sdpmsg = GstSdp.SDPMessage.new()
-print(f'res: {res}')
-print(f'sdpmsg: {sdpmsg.as_text()}')
+webrtcbin.connect('on-negotiation-needed', on_negotiation_needed)
+webrtcbin.connect('on-ice-candidate', send_ice_candidate_message)
 
 
-class Offer(BaseModel):
-    type: str
-    offer: dict
+# class Offer(BaseModel):
+#     type: str
+#     offer: dict
+
 
 @app.get("/")
 async def get(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
-@app.post("/offer")
-async def receive_offer(offer: Offer):
-    print("Offer.json() :", offer.json())
 
-    try:
-        offer_sdp = offer.offer['sdp']
-
-        print(f'offer.offer["offer"]: {offer_sdp}')
-
-        res, message_from_back_end = GstSdp.SDPMessage.new()
-        GstSdp.sdp_message_parse_buffer(bytes(offer_sdp.encode()), message_from_back_end)
-        answer_sdp = GstWebRTC.WebRTCSessionDescription.new(GstWebRTC.WebRTCSDPType.ANSWER, message_from_back_end)
-
-        print('--------------------------------------------------')
+@app.websocket("/ws/{client_id}")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    websocket_connection = websocket
 
 
 
-        print(f'Dir: {dir(answer_sdp.sdp.get_connection)}')
+    while True:
+        data = await websocket_connection.receive_text()
 
-        print(f'get_connection.get_attribute: {answer_sdp.sdp.get_connection.get_arguments()}')
-        print(f'Answer methods: {dir(answer_sdp.sdp)}')
-
-    except Exception as e:
-        print(e)
-        return {"status": 300}
-
-    return {"status": 200}
+        if data == 'PING':
+            print(f'Received a message: {data}')
+            await websocket_connection.send_text('PONG')
+            continue
 
 
 
@@ -77,31 +77,38 @@ async def receive_offer(offer: Offer):
 
 
 
-# def on_offer_created(promise, _, webrtcbin):
-#     promise = promise.wait()
-#     reply = promise.get_reply()
-#     offer = reply.get_value('offer')
+
+# @app.post("/offer")
+# async def receive_offer(offer: Offer):
+#     print("Offer.json() :", offer.json())
 #
-#     promise = Gst.Promise.new()
-#     webrtcbin.emit('set-local-description', offer, promise)
-#     promise.interrupt()
+#     try:
+#         offer_sdp = offer.offer['sdp']
 #
-#     # Convert the offer to a string and send it to the client
-#     sdp_str = offer.sdp.as_text()
-#     print("SDP Offer:\n{}".format(sdp_str))
-#     # Here you would typically send the SDP offer to the client via your signaling mechanism
+#         print(f'offer.offer["offer"]: {offer_sdp}')
 #
-# def on_negotiation_needed(element, _):
-#     promise = Gst.Promise.new_with_change_func(on_offer_created, element, element)
-#     element.emit('create-offer', None, promise)
+#         res, message_from_back_end = GstSdp.SDPMessage.new()
+#         GstSdp.sdp_message_parse_buffer(bytes(offer_sdp.encode()), message_from_back_end)
+#         answer_sdp = GstWebRTC.WebRTCSessionDescription.new(GstWebRTC.WebRTCSDPType.ANSWER, message_from_back_end)
+#
+#         print('--------------------------------------------------')
 #
 #
 #
+#         print(f'Dir: {dir(answer_sdp.sdp.get_connection)}')
 #
-# pipeline.set_state(Gst.State.PLAYING)
-# print("Pipeline started")
-# loop = GLib.MainLoop()
-# try:
-#     loop.run()
-# except KeyboardInterrupt:
-#     loop.quit()
+#         print(f'get_connection.get_attribute: {answer_sdp.sdp.get_connection.get_arguments()}')
+#         print(f'Answer methods: {dir(answer_sdp.sdp)}')
+#
+#     except Exception as e:
+#         print(e)
+#         return {"status": 300}
+#
+#     return {"status": 200}
+
+
+
+
+
+
+

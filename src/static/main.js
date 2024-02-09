@@ -11,6 +11,113 @@ let localStream;
 let remoteStream;
 let peerConnection;
 
+
+let websocket;
+var client_id = Date.now();
+let websocket_url = 'ws://' + window.location.hostname + `:80/ws/${client_id}`;
+
+
+
+
+let sendMessage = async (message) => {
+    if (websocket.readyState === WebSocket.OPEN) {
+        websocket.send(message);
+    } else {
+        console.error('WebSocket is not open. ReadyState: ', websocket.readyState);
+    }
+}
+
+
+let createOffer = async () => {
+    let offer = await peerConnection.createOffer()
+    await peerConnection.setLocalDescription(offer);
+
+
+    let message = JSON.stringify({'type': 'offer', 'offer': offer})
+
+    console.log("Local Offer set:", message);
+
+    return message
+}
+
+
+let createAnswer = async () => {
+    let answer = await peerConnection.createAnswer()
+    await peerConnection.setLocalDescription(answer);
+
+    sdp = {'sdp': peer_connection.localDescription};
+    sendMessage(JSON.stringify(sdp));
+}
+
+
+let handleIncomingSDP = async ( sdp ) => {
+    peerConnection.setRemoteDescription(sdp).then(() => {
+        console.log('Successfully set Remote description!');
+        if (sdp.type != 'offer') {
+            return;
+        } else {
+            peerConnection.setLocalDescription(sdp)
+                .then(createAnswer)
+                .catch((e) => {console.error('Error while creating answer: ' + e)});
+        }
+    }).catch((e) => {console.error('Error while setting Remote Description: ' + e)});
+}
+
+let handleIncomingICE = async ( ice ) => {
+    var candidate = new RTCIceCandidate(ice);
+    peer_connection.addIceCandidate(candidate).catch(setError);
+}
+
+let onIceCandidate = ( event ) => {
+    if (event.candidate == null) {
+        console.log("ICE Candidate was null, done");
+        return;
+    };
+
+    sendMessage(JSON.stringify({'ice': event.candidate}));
+}
+
+
+let onWebsocketMessage = async (event) => {
+    console.log('Received a message from websocket of type: ' + event.data)
+
+    if (event.data === 'PONG') {
+        console.log(event.data)
+        return;
+    }
+
+    if (event.data === 'waitingForOffer') {
+        let Offer = await createOffer();
+        sendMessage(Offer);
+        return;
+    }
+
+    try {
+        msg = JSON.parse(event.data);
+    } catch (e) {
+        console.error('Failed to parse a message from the websocket' + event.data);
+    }
+
+    if (msg.sdp != null) {
+        handleIncomingSDP(msd.sdp);
+    } else if (msg.ice != null) {
+        console.log('Received new ICE candidate: ' + msg.ice)
+        handleIncomingICE(msg.ice);
+    } else {
+        console.error('Unknown message type')
+    }
+
+
+}
+
+let onWebsocketError = () => {} // Impl Websocket error handling
+
+let onWebsocketClose = () => {} // Impl Socket Close handling
+
+let websocketConnect = () => {} // Refactor later
+
+
+
 let init = async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         console.error('MediaDevices API not supported or blocked in this browser.');
@@ -23,41 +130,34 @@ let init = async () => {
         console.error('Error accessing media devices.', error);
     }
 
-    createOffer()
-};
-
-let fetchOffer = async (serverEndpoint, message) => {
-    fetch(serverEndpoint, {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json'
-    },
-    body: message})
-        .then(response => response.json())
-        .then(data => {console.log('Success:', data);})
-        .catch((error) => {console.error('Error:', error);});
-
-}
-
-let createOffer = async () => {
     peerConnection = new RTCPeerConnection( iceServers );
 
     localStream.getTracks().forEach((track) => {
             peerConnection.addTrack(track, localStream)
         });
 
-    let offer = await peerConnection.createOffer()
-    await peerConnection.setLocalDescription(offer);
+    peerConnection.onicecandidate = onIceCandidate;
 
 
-    let message = JSON.stringify({'type': 'offer', 'offer': offer})
+    try {
+        websocket = new WebSocket(websocket_url)
+        websocket.onmessage = onWebsocketMessage;
+        websocket.onopen = (e) => {
+            sendMessage("PING");
+        };
+    } catch (error) {
+        console.error('Error accessing the websocket', error)
+    }
 
-    console.log("Local Offer:", message);
-
-    fetchOffer(offerEndpoint, message);
+};
 
 
-}
+
+
+
+
+
+
 
 
 init();
