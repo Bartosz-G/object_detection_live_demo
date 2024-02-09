@@ -1,3 +1,7 @@
+from fastapi import FastAPI, Request, HTTPException, WebSocket
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
+
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GLib
@@ -5,11 +9,13 @@ gi.require_version('GstWebRTC', '1.0')
 from gi.repository import GstWebRTC
 gi.require_version('GstSdp', '1.0')
 from gi.repository import GstSdp
-from fastapi import FastAPI, Request, HTTPException, WebSocket
-from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+
+import asyncio
 import json
+
+
+
+
 
 
 
@@ -24,12 +30,13 @@ websocket_connection = None
 
 
 def on_negotiation_needed(*args):
+    global websocket_connection
     assert websocket_connection, "on_negotiation was called before websocket_connection was created"
-    print("on_negotiation_needed was called: ", args)
-    websocket_connection.send_text('waitingForOffer')
-
+    print("ON_NEGOTIATION_NEEDED was called: ", args)
+    result = asyncio.run(websocket_connection.send_text('waitingForOffer'))
 
 def send_ice_candidate_message(self, _, mlineindex, candidate):
+    global websocket_connection
     assert websocket_connection, f"send_ice_candidate_message was called before websocket_connection was created! \n candidate: {candidate} \n mlineindex: {mlineindex}"
     icemsg = json.dumps({'ice': {'candidate': candidate, 'sdpMLineIndex': mlineindex}})
 
@@ -54,9 +61,9 @@ async def get(request: Request):
 
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket):
+    global websocket_connection
     await websocket.accept()
     websocket_connection = websocket
-
 
 
     while True:
@@ -64,48 +71,29 @@ async def websocket_endpoint(websocket: WebSocket):
 
         if data == 'PING':
             print(f'Received a message: {data}')
-            await websocket_connection.send_text('PONG')
+            pipeline.set_state(Gst.State.PLAYING)
             continue
 
+        msg = json.loads(data)
+
+        if 'offer' in msg:
+            sdp = msg['offer']['sdp']
+            print(f'Received an offer: \n {sdp}')
+            res, sdpmsg = GstSdp.SDPMessage.new()
+            GstSdp.sdp_message_parse_buffer(bytes(sdp.encode()), sdpmsg)
+            offer = GstWebRTC.WebRTCSessionDescription.new(GstWebRTC.WebRTCSDPType.OFFER, sdpmsg)
+            promise = Gst.Promise.new()
+            webrtcbin.emit('set-remote-description', offer, promise)
+            promise.interrupt()
 
 
 
-
-
-
-
-
-
-
-
-# @app.post("/offer")
-# async def receive_offer(offer: Offer):
-#     print("Offer.json() :", offer.json())
-#
-#     try:
-#         offer_sdp = offer.offer['sdp']
-#
-#         print(f'offer.offer["offer"]: {offer_sdp}')
-#
-#         res, message_from_back_end = GstSdp.SDPMessage.new()
-#         GstSdp.sdp_message_parse_buffer(bytes(offer_sdp.encode()), message_from_back_end)
-#         answer_sdp = GstWebRTC.WebRTCSessionDescription.new(GstWebRTC.WebRTCSDPType.ANSWER, message_from_back_end)
-#
-#         print('--------------------------------------------------')
-#
-#
-#
-#         print(f'Dir: {dir(answer_sdp.sdp.get_connection)}')
-#
-#         print(f'get_connection.get_attribute: {answer_sdp.sdp.get_connection.get_arguments()}')
-#         print(f'Answer methods: {dir(answer_sdp.sdp)}')
-#
-#     except Exception as e:
-#         print(e)
-#         return {"status": 300}
-#
-#     return {"status": 200}
-
+        elif 'ice' in msg:
+            ice = msg['ice']
+            print(f'Received an ICE candidate: {ice}')
+            candidate = ice['candidate']
+            sdpmlineindex = ice['sdpMLineIndex']
+            webrtcbin.emit('add-ice-candidate', sdpmlineindex, candidate)
 
 
 
