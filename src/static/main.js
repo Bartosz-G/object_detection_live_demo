@@ -99,7 +99,7 @@ let onWebsocketMessage = async (event) => {
     }
 
     if (msg.sdp != null) {
-        handleIncomingSDP(msd.sdp);
+        handleIncomingSDP(msg.sdp);
     } else if (msg.ice != null) {
         console.log('Received new ICE candidate: ' + msg.ice)
         handleIncomingICE(msg.ice);

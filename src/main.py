@@ -33,12 +33,32 @@ def on_negotiation_needed(*args):
     global websocket_connection
     assert websocket_connection, "on_negotiation was called before websocket_connection was created"
     print("ON_NEGOTIATION_NEEDED was called: ", args)
-    result = asyncio.run(websocket_connection.send_text('waitingForOffer'))
+    _ = asyncio.run(websocket_connection.send_text('waitingForOffer'))
 
-def send_ice_candidate_message(self, _, mlineindex, candidate):
+def send_ice_candidate_message(_, mlineindex, candidate):
+    print(f'INITIATING SENDING OF ICE CANDIDATE \n')
     global websocket_connection
     assert websocket_connection, f"send_ice_candidate_message was called before websocket_connection was created! \n candidate: {candidate} \n mlineindex: {mlineindex}"
     icemsg = json.dumps({'ice': {'candidate': candidate, 'sdpMLineIndex': mlineindex}})
+
+
+def on_answer_created(promise, _, webrtcbin):
+    global websocket_connection
+    print(f'On answer creation initiated... \n')
+    promise.wait()
+    msg = promise.get_reply()
+    answer = msg.get_value('answer')
+    print(f'ANSWER: \n {answer.sdp.as_text()}')
+    webrtcbin.emit('set-local-description', answer, promise)
+    promise.interrupt()
+    print(f'ON ANSWER CREATION COMPLETE \n')
+
+    reply = json.dumps({'sdp': {'type':'answer', 'sdp': answer.sdp.as_text()}})
+
+    print(type(reply))
+
+    _ = asyncio.run(websocket_connection.send_text(reply))
+
 
 
 pipeline = Gst.parse_launch(
@@ -85,6 +105,10 @@ async def websocket_endpoint(websocket: WebSocket):
             promise = Gst.Promise.new()
             webrtcbin.emit('set-remote-description', offer, promise)
             promise.interrupt()
+
+            print('Creating an answer ... \n')
+            promise = Gst.Promise.new_with_change_func(on_answer_created, None, webrtcbin)
+            webrtcbin.emit('create-answer', None, promise)
 
 
 
