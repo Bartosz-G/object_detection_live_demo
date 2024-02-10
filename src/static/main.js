@@ -65,7 +65,7 @@ let handleIncomingSDP = async ( sdp ) => {
 
 let handleIncomingICE = async ( ice ) => {
     var candidate = new RTCIceCandidate(ice);
-    peer_connection.addIceCandidate(candidate).catch(setError);
+    peerConnection.addIceCandidate(candidate).catch((e) => {console.error('Error while handling incoming ICE: ' + e)});
 }
 
 let onIceCandidate = ( event ) => {
@@ -101,7 +101,7 @@ let onWebsocketMessage = async (event) => {
     if (msg.sdp != null) {
         handleIncomingSDP(msg.sdp);
     } else if (msg.ice != null) {
-        console.log('Received new ICE candidate: ' + msg.ice)
+        console.log('Received new ICE candidate: ', msg.ice)
         handleIncomingICE(msg.ice);
     } else {
         console.error('Unknown message type')

@@ -41,6 +41,9 @@ def send_ice_candidate_message(_, mlineindex, candidate):
     assert websocket_connection, f"send_ice_candidate_message was called before websocket_connection was created! \n candidate: {candidate} \n mlineindex: {mlineindex}"
     icemsg = json.dumps({'ice': {'candidate': candidate, 'sdpMLineIndex': mlineindex}})
 
+    print(f'ICE candidate being sent: {icemsg}')
+    asyncio.run(websocket_connection.send_text(icemsg))
+
 
 def on_answer_created(promise, _, webrtcbin):
     global websocket_connection
@@ -55,7 +58,6 @@ def on_answer_created(promise, _, webrtcbin):
 
     reply = json.dumps({'sdp': {'type':'answer', 'sdp': answer.sdp.as_text()}})
 
-    print(type(reply))
 
     _ = asyncio.run(websocket_connection.send_text(reply))
 
@@ -118,9 +120,5 @@ async def websocket_endpoint(websocket: WebSocket):
             candidate = ice['candidate']
             sdpmlineindex = ice['sdpMLineIndex']
             webrtcbin.emit('add-ice-candidate', sdpmlineindex, candidate)
-
-
-
-
 
 
