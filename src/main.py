@@ -61,20 +61,36 @@ def on_answer_created(promise, _, webrtcbin):
 
     _ = asyncio.run(websocket_connection.send_text(reply))
 
+def on_decodebin_added(_, pad):
+    pass
 
 
-pipeline = Gst.parse_launch(
-    "webrtcbin name=webrtcbin stun-server=stun://stun.l.google.com:19302 ! decodebin name=decoder ! queue name=queue ! videoscale name=videoscale ! "
-    "capsfilter name=capsfilter ! videoconvert name=convert"
-)
+
+def on_stream_added(_, pad):
+    print(f'------ ON STREAM ADDED EVENT HAS BEEN CALLED ---------')
+    print(f'------ STREAM IS NOW FLOWING  ---------')
+
+
+
+
+
+# pipeline = Gst.parse_launch(
+#     "webrtcbin name=webrtcbin stun-server=stun://stun.kinesisvideo.eu-west-2.amazonaws.com:443 ! decodebin name=decoder ! queue name=queue ! videoscale name=videoscale ! "
+#     "capsfilter name=capsfilter ! videoconvert name=convert"
+# )
+
+
+pipeline = Gst.Pipeline.new("my_pipeline")
+webrtcbin = Gst.ElementFactory.make("webrtcbin", "webrtcbin")
+webrtcbin.set_property("stun-server", "stun://stun.kinesisvideo.eu-west-2.amazonaws.com:443")
+
+pipeline.add(webrtcbin)
+
 webrtcbin = pipeline.get_by_name("webrtcbin")
 webrtcbin.connect('on-negotiation-needed', on_negotiation_needed)
 webrtcbin.connect('on-ice-candidate', send_ice_candidate_message)
+webrtcbin.connect('pad-added', on_stream_added)
 
-
-# class Offer(BaseModel):
-#     type: str
-#     offer: dict
 
 
 @app.get("/")

@@ -1,4 +1,4 @@
-const iceServers = [
+const stunServers = [
     {
         urls: ['stun:stun.kinesisvideo.eu-west-2.amazonaws.com:443', 'stun.l.google.com']
     }
@@ -70,12 +70,14 @@ let handleIncomingICE = async ( ice ) => {
 
 let onIceCandidate = ( event ) => {
     if (event.candidate == null) {
-        console.log("ICE Candidate was null, done");
+        console.log("ICE Candidate was null, done with gethering ICE candidates");
         return;
     };
 
     sendMessage(JSON.stringify({'ice': event.candidate}));
 }
+
+
 
 
 let onWebsocketMessage = async (event) => {
@@ -130,13 +132,29 @@ let init = async () => {
         console.error('Error accessing media devices.', error);
     }
 
-    peerConnection = new RTCPeerConnection( iceServers );
+    peerConnection = new RTCPeerConnection( stunServers );
+
+
 
     localStream.getTracks().forEach((track) => {
             peerConnection.addTrack(track, localStream)
         });
 
     peerConnection.onicecandidate = onIceCandidate;
+
+    // ------- Monitoring ICE negotiations ---------
+    peerConnection.onicecandidateerror = e => {
+        console.log("ERROR: ICE candidate Error: ", e)
+    }
+
+    peerConnection.oniceconnectionstatechange = () => {
+            console.log("ICE connection state change:", peerConnection.iceConnectionState);
+    }
+
+    peerConnection.onicegatheringstatechange = () => {
+        console.log("ICE gathering state change:", peerConnection.iceGatheringState);
+    };
+    // -----------
 
 
     try {
