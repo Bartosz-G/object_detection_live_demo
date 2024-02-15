@@ -87,6 +87,8 @@ resource "aws_security_group" "webserver_sg" {
   }
 
 }
+
+
 module "webserver1" {
   source = "./webserver"
 
@@ -95,7 +97,7 @@ module "webserver1" {
   webserver_ssh_key_path = "./keys/webserver1"
   webserver_security_group = aws_security_group.webserver_sg.id
   ami = "ami-00efc25778562c229"
-  instance_type = "t4g.micro"
+  instance_type = "c7g.medium"
 }
 
 output "webserver_ip" {
@@ -128,3 +130,5 @@ resource "ansible_playbook" "setup_gstreamer" {
 
   depends_on = [module.webserver1]
 }
+
+

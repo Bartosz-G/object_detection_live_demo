@@ -12,8 +12,7 @@ from gi.repository import GstSdp
 
 import asyncio
 import json
-
-
+from threading import Thread
 
 
 
@@ -59,10 +58,54 @@ def on_answer_created(promise, _, webrtcbin):
     reply = json.dumps({'sdp': {'type':'answer', 'sdp': answer.sdp.as_text()}})
 
 
-    _ = asyncio.run(websocket_connection.send_text(reply))
+    asyncio.run(websocket_connection.send_text(reply))
+
+
+
+async def pull_sample_loop():
+    print(f'PULL SAMPLE LOOP STARTED')
+    global appsink
+    loop = asyncio.get_running_loop()
+
+    def _pull_sample():
+        sample = appsink.emit("pull-sample")
+        if sample:
+            print("Pulled sample:", sample)
+            sample.unref()
+        return False
+
+    while True:
+        await loop.run_in_executor(None, GLib.idle_add, _pull_sample)
+
 
 def on_decodebin_added(_, pad):
-    pass
+    print(f'ON_DECODEBIN_ADDED CALLED')
+    global pipeline
+    global appsink
+
+    if not pad.has_current_caps():
+        print(pad, 'has no caps, ignoring')
+        return
+
+    caps = pad.get_current_caps()
+    # print(f'dir(caps):{dir(caps)}')
+    print(f'INCOMING STREAM CAPABILITIES: {caps.to_string()}')
+    name = caps.to_string()
+
+
+    q = Gst.ElementFactory.make('queue')
+    conv = Gst.ElementFactory.make('videoconvert')
+
+
+    pipeline.add(q)
+    pipeline.add(conv)
+    pipeline.add(appsink)
+    pipeline.sync_children_states()
+    pad.link(q.get_static_pad('sink'))
+    q.link(conv)
+    conv.link(appsink)
+
+
 
 
 
@@ -71,6 +114,16 @@ def on_stream_added(_, pad):
     print(f'------ STREAM IS NOW FLOWING  ---------')
 
 
+    global pipeline
+    global webrtcbin
+
+    decodebin = Gst.ElementFactory.make('decodebin')
+    decodebin.connect('pad-added', on_decodebin_added)
+    pipeline.add(decodebin)
+    decodebin.sync_state_with_parent()
+    webrtcbin.link(decodebin)
+
+    print(f'----- Everything connected, stream should be flowing')
 
 
 
@@ -80,17 +133,26 @@ def on_stream_added(_, pad):
 # )
 
 
-pipeline = Gst.Pipeline.new("my_pipeline")
+
 webrtcbin = Gst.ElementFactory.make("webrtcbin", "webrtcbin")
+appsink = Gst.ElementFactory.make("appsink", "appsink")
+
 webrtcbin.set_property("stun-server", "stun://stun.kinesisvideo.eu-west-2.amazonaws.com:443")
 
-pipeline.add(webrtcbin)
+appsink.set_property("emit-signals", True)
+appsink.set_property("drop", True)
+appsink.set_property("max-buffers", 1)
+appsink.set_property("sync", True)
 
-webrtcbin = pipeline.get_by_name("webrtcbin")
+
 webrtcbin.connect('on-negotiation-needed', on_negotiation_needed)
 webrtcbin.connect('on-ice-candidate', send_ice_candidate_message)
 webrtcbin.connect('pad-added', on_stream_added)
 
+
+
+pipeline = Gst.Pipeline.new("pipeline")
+pipeline.add(webrtcbin)
 
 
 @app.get("/")
@@ -110,6 +172,12 @@ async def websocket_endpoint(websocket: WebSocket):
         if data == 'PING':
             print(f'Received a message: {data}')
             pipeline.set_state(Gst.State.PLAYING)
+
+
+
+            # pull_samples_thread = Thread(target=pull_sample_loop)
+            # pull_samples_thread.start()
+
             continue
 
         msg = json.loads(data)
