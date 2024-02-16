@@ -10,18 +10,14 @@ from gi.repository import GstWebRTC
 gi.require_version('GstSdp', '1.0')
 from gi.repository import GstSdp
 
+from contextlib import asynccontextmanager
 import asyncio
 import json
-from threading import Thread
+import signal
 
 
 
 
-
-app = FastAPI()
-
-templates = Jinja2Templates(directory="/home/ubuntu/src/templates")
-app.mount("/static", StaticFiles(directory="/home/ubuntu/src/static"), name="static")
 
 
 Gst.init(None)
@@ -62,20 +58,6 @@ def on_answer_created(promise, _, webrtcbin):
 
 
 
-async def pull_sample_loop():
-    print(f'PULL SAMPLE LOOP STARTED')
-    global appsink
-    loop = asyncio.get_running_loop()
-
-    def _pull_sample():
-        sample = appsink.emit("pull-sample")
-        if sample:
-            print("Pulled sample:", sample)
-            sample.unref()
-        return False
-
-    while True:
-        await loop.run_in_executor(None, GLib.idle_add, _pull_sample)
 
 
 def on_decodebin_added(_, pad):
@@ -127,10 +109,6 @@ def on_stream_added(_, pad):
 
 
 
-# pipeline = Gst.parse_launch(
-#     "webrtcbin name=webrtcbin stun-server=stun://stun.kinesisvideo.eu-west-2.amazonaws.com:443 ! decodebin name=decoder ! queue name=queue ! videoscale name=videoscale ! "
-#     "capsfilter name=capsfilter ! videoconvert name=convert"
-# )
 
 
 
@@ -155,15 +133,63 @@ pipeline = Gst.Pipeline.new("pipeline")
 pipeline.add(webrtcbin)
 
 
+
+
+
+async def pull_samples(appsink):
+    print(f'--- PULL SAMPLE CALLED ----')
+    try:
+        while True:
+            await asyncio.sleep(6)
+            sample = appsink.emit("pull-sample")
+            if sample is None:
+                print("No samples in appsink")
+                continue
+
+            print(f"Pulled a sample from appsink: \n {sample}")
+
+
+    except asyncio.CancelledError:
+        print(f'Gracefully stopping printing...')
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global pipeline
+    pulling_task = asyncio.create_task(pull_samples(appsink=appsink))
+
+    pulling_loop = asyncio.get_running_loop()
+    stop = asyncio.Future()
+
+    def handle_sigterm():
+        print("SIGTERM received, cancelling tasks...")
+        pulling_task.cancel()
+        stop.set_result(True)
+
+    # pulling_loop.add_signal_handler(signal.SIGTERM, handle_sigterm)
+
+    yield
+
+    pipeline.set_state(Gst.State.NULL)
+
+
+
+app = FastAPI(lifespan=lifespan)
+templates = Jinja2Templates(directory="/home/ubuntu/src/templates")
+app.mount("/static", StaticFiles(directory="/home/ubuntu/src/static"), name="static")
+
 @app.get("/")
 async def get(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket):
+    global appsink
     global websocket_connection
     await websocket.accept()
     websocket_connection = websocket
+
+    # asyncio.create_task(run_in_background(pull_samples(appsink=appsink)))
 
 
     while True:
@@ -173,10 +199,6 @@ async def websocket_endpoint(websocket: WebSocket):
             print(f'Received a message: {data}')
             pipeline.set_state(Gst.State.PLAYING)
 
-
-
-            # pull_samples_thread = Thread(target=pull_sample_loop)
-            # pull_samples_thread.start()
 
             continue
 
@@ -204,5 +226,12 @@ async def websocket_endpoint(websocket: WebSocket):
             candidate = ice['candidate']
             sdpmlineindex = ice['sdpMLineIndex']
             webrtcbin.emit('add-ice-candidate', sdpmlineindex, candidate)
+
+
+
+
+
+
+
 
 
