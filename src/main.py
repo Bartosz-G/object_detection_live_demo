@@ -146,11 +146,13 @@ async def pull_samples(appsink):
                 print("No samples in appsink")
                 continue
 
+            caps = sample.get_caps()
             print(f"Pulled a sample from appsink: \n {sample}")
+            print(f"CAPS: \n {caps.to_string()}")
 
 
     except asyncio.CancelledError:
-        print(f'Gracefully stopping printing...')
+        print(f'Gracefully stopping pulling samples...')
 
 
 @asynccontextmanager
@@ -158,18 +160,9 @@ async def lifespan(app: FastAPI):
     global pipeline
     pulling_task = asyncio.create_task(pull_samples(appsink=appsink))
 
-    pulling_loop = asyncio.get_running_loop()
-    stop = asyncio.Future()
-
-    def handle_sigterm():
-        print("SIGTERM received, cancelling tasks...")
-        pulling_task.cancel()
-        stop.set_result(True)
-
-    # pulling_loop.add_signal_handler(signal.SIGTERM, handle_sigterm)
-
     yield
 
+    pulling_task.cancel()
     pipeline.set_state(Gst.State.NULL)
 
 

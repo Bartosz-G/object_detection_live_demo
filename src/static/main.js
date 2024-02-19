@@ -11,6 +11,14 @@ let localStream;
 let remoteStream;
 let peerConnection;
 
+const displayDimensions = {
+    width: { ideal: 1280 },
+    height: { ideal: 720 }}
+
+const classifyDimensions =  {
+    width: { exact: 640 },
+    height: { exact: 640 }
+  }
 
 let websocket;
 var client_id = Date.now();
@@ -126,7 +134,7 @@ let init = async () => {
         return;
     }
     try {
-        localStream = await navigator.mediaDevices.getUserMedia({video: true, audio: false});
+        localStream = await navigator.mediaDevices.getUserMedia({video: displayDimensions, audio: false});
         document.getElementById('viewer').srcObject = localStream;
     } catch (error) {
         console.error('Error accessing media devices.', error);
@@ -136,7 +144,8 @@ let init = async () => {
 
 
 
-    localStream.getTracks().forEach((track) => {
+    localStream.getVideoTracks().forEach((track) => {
+            track.applyConstraints(classifyDimensions)
             peerConnection.addTrack(track, localStream)
         });
 
