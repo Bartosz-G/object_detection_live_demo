@@ -71,7 +71,6 @@ def on_decodebin_added(_, pad):
         return
 
     caps = pad.get_current_caps()
-    # print(f'dir(caps):{dir(caps)}')
     print(f'INCOMING STREAM CAPABILITIES: {caps.to_string()}')
     name = caps.to_string()
 
@@ -81,17 +80,26 @@ def on_decodebin_added(_, pad):
     capsfilter = Gst.ElementFactory.make('capsfilter')
     conv = Gst.ElementFactory.make('videoconvert')
 
-    capsfilter.set_property('caps', Gst.Caps.from_string(f"video/x-raw,width={WIDTH},height={HEIGHT},format=RGB"))
+
+    # capsfilter.set_property('caps', Gst.Caps.from_string(f"video/x-raw,width={WIDTH},height={HEIGHT},format=RGB"))
+
+    enforce_caps = Gst.Caps.from_string(f"video/x-raw,width={WIDTH},height={HEIGHT}")
+    capsfilter.set_property('caps', enforce_caps)
 
 
     pipeline.add(q)
+    pipeline.add(scale)
+    pipeline.add(capsfilter)
     pipeline.add(conv)
     pipeline.add(appsink)
     pipeline.sync_children_states()
     pad.link(q.get_static_pad('sink'))
-    q.link(conv)
+    q.link(scale)
+    scale.link(capsfilter)
+    capsfilter.link(conv)
     conv.link(appsink)
 
+    pipeline.set_state(Gst.State.PLAYING)
 
 
 
@@ -143,9 +151,16 @@ pipeline.add(webrtcbin)
 
 async def pull_samples(appsink):
     print(f'--- PULL SAMPLE CALLED ----')
+    global pipeline
     try:
         while True:
             await asyncio.sleep(6)
+
+            state_return, state, pending_state = pipeline.get_state(Gst.CLOCK_TIME_NONE)
+            if state == Gst.State.PAUSED:
+                print(f'Pipeline has been paused, continuing')
+                continue
+
             sample = appsink.emit("pull-sample")
             if sample is None:
                 print("No samples in appsink")
@@ -155,9 +170,12 @@ async def pull_samples(appsink):
             print(f"Pulled a sample from appsink: \n {sample}")
             print(f"CAPS: \n {caps.to_string()}")
 
+    except Exception as e:
+        print(f'Exception occured when trying to pull from the appsink: {e}')
 
-    except asyncio.CancelledError:
-        print(f'Gracefully stopping pulling samples...')
+
+    # except asyncio.CancelledError:
+    #     print(f'Gracefully stopping pulling samples...')
 
 
 @asynccontextmanager
