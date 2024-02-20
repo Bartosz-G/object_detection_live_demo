@@ -17,7 +17,8 @@ import signal
 
 
 
-
+HEIGHT = 640
+WIDTH = 640
 
 
 Gst.init(None)
@@ -76,7 +77,11 @@ def on_decodebin_added(_, pad):
 
 
     q = Gst.ElementFactory.make('queue')
+    scale = Gst.ElementFactory.make('videoscale')
+    capsfilter = Gst.ElementFactory.make('capsfilter')
     conv = Gst.ElementFactory.make('videoconvert')
+
+    capsfilter.set_property('caps', Gst.Caps.from_string(f"video/x-raw,width={WIDTH},height={HEIGHT},format=RGB"))
 
 
     pipeline.add(q)
