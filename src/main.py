@@ -77,27 +77,25 @@ def on_decodebin_added(_, pad):
 
     q = Gst.ElementFactory.make('queue')
     scale = Gst.ElementFactory.make('videoscale')
-    capsfilter = Gst.ElementFactory.make('capsfilter')
     conv = Gst.ElementFactory.make('videoconvert')
+    capsfilter = Gst.ElementFactory.make('capsfilter')
 
 
-    # capsfilter.set_property('caps', Gst.Caps.from_string(f"video/x-raw,width={WIDTH},height={HEIGHT},format=RGB"))
-
-    enforce_caps = Gst.Caps.from_string(f"video/x-raw,width={WIDTH},height={HEIGHT}")
+    enforce_caps = Gst.Caps.from_string(f"video/x-raw,format=RGB,width={WIDTH},height={HEIGHT}")
     capsfilter.set_property('caps', enforce_caps)
 
 
     pipeline.add(q)
     pipeline.add(scale)
-    pipeline.add(capsfilter)
     pipeline.add(conv)
+    pipeline.add(capsfilter)
     pipeline.add(appsink)
     pipeline.sync_children_states()
     pad.link(q.get_static_pad('sink'))
     q.link(scale)
-    scale.link(capsfilter)
-    capsfilter.link(conv)
-    conv.link(appsink)
+    scale.link(conv)
+    conv.link(capsfilter)
+    capsfilter.link(appsink)
 
     pipeline.set_state(Gst.State.PLAYING)
 
@@ -167,8 +165,8 @@ async def pull_samples(appsink):
                 continue
 
             caps = sample.get_caps()
-            print(f"Pulled a sample from appsink: \n {sample}")
-            print(f"CAPS: \n {caps.to_string()}")
+            print(f"Pulled a sample from appsink \n")
+            print(f"Capabilities of a pulled sample: \n {caps.to_string()}")
 
     except Exception as e:
         print(f'Exception occured when trying to pull from the appsink: {e}')
