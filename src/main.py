@@ -11,6 +11,8 @@ gi.require_version('GstSdp', '1.0')
 from gi.repository import GstSdp
 
 from contextlib import asynccontextmanager
+import onnxruntime as ort
+import numpy as np
 import asyncio
 import json
 import signal
