@@ -16,12 +16,14 @@ import numpy as np
 import asyncio
 import json
 import signal
+import os
 
 
 
 HEIGHT = 640
 WIDTH = 640
 FORMAT = 'BGR'
+MODEL_PATH = 'yolov8n.onnx'
 
 
 Gst.init(None)
@@ -150,12 +152,12 @@ pipeline.add(webrtcbin)
 
 
 
-async def pull_samples(appsink):
+async def pull_samples(appsink, model):
     print(f'--- PULL SAMPLE CALLED ----')
     global pipeline
     try:
         while True:
-
+            await asyncio.sleep(2)
             state_return, state, pending_state = pipeline.get_state(Gst.CLOCK_TIME_NONE)
             if state == Gst.State.PAUSED:
                 print(f'Pipeline has been paused, continuing')
@@ -163,7 +165,6 @@ async def pull_samples(appsink):
 
             sample = appsink.emit("pull-sample")
             if sample is None:
-                await asyncio.sleep(1)
                 # print("No samples in appsink")
                 continue
 
@@ -179,12 +180,15 @@ async def pull_samples(appsink):
             if not success:
                 raise RuntimeError("Could not map buffer data!")
 
-            numpy_frame = np.ndarray(
+            frame = np.ndarray(
                 shape=(HEIGHT, WIDTH, 3),
                 dtype=np.uint8,
-                buffer=map_info.data)
+                buffer=map_info.data) / 255
 
-            print(f'Value from the numpy_frame: {numpy_frame[1,1,1]}')
+            print(f'model.get_inputs(): {model.get_inputs()}')
+            print(f'frame: {frame[0,0,0]}')
+
+
 
 
 
@@ -199,7 +203,8 @@ async def pull_samples(appsink):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global pipeline
-    pulling_task = asyncio.create_task(pull_samples(appsink=appsink))
+    model = ort.InferenceSession(os.path.join('models', MODEL_PATH))
+    pulling_task = asyncio.create_task(pull_samples(appsink=appsink, model=model))
 
     yield
 
