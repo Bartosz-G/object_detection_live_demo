@@ -185,8 +185,14 @@ async def pull_samples(appsink, model):
                 dtype=np.uint8,
                 buffer=map_info.data) / 255
 
-            print(f'model.get_inputs(): {model.get_inputs()}')
-            print(f'frame: {frame[0,0,0]}')
+            frame = np.transpose(frame, (2, 0, 1))
+            frame = np.expand_dims(frame, axis=0).astype(np.float32)
+
+            input = {model.get_inputs()[0].name: frame}
+            output = model.run(None, input)
+
+            print(f'output: {output}')
+
 
 
 
