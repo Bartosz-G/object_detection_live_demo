@@ -18,6 +18,10 @@ import json
 import signal
 import os
 
+# For measuring performance
+from functools import wraps
+from time import perf_counter
+
 
 
 HEIGHT = 640
@@ -28,6 +32,18 @@ MODEL_PATH = 'yolov8n.onnx'
 
 Gst.init(None)
 websocket_connection = None
+
+
+def timing(f):
+    @wraps(f)
+    def wrap(*args, **kw):
+        ts = perf_counter()
+        result = f(*args, **kw)
+        te = perf_counter()
+        elapsed_time = (te - ts) * 1000
+        print(f"Function '{f.__name__}' executed in {elapsed_time:.2f} ms")
+        return result
+    return wrap
 
 
 def on_negotiation_needed(*args):
@@ -155,9 +171,12 @@ pipeline.add(webrtcbin)
 async def pull_samples(appsink, model):
     print(f'--- PULL SAMPLE CALLED ----')
     global pipeline
+    @timing
+    def predict(X):
+        return model.run(None, X)
+
     try:
         while True:
-            await asyncio.sleep(2)
             state_return, state, pending_state = pipeline.get_state(Gst.CLOCK_TIME_NONE)
             if state == Gst.State.PAUSED:
                 print(f'Pipeline has been paused, continuing')
@@ -165,6 +184,7 @@ async def pull_samples(appsink, model):
 
             sample = appsink.emit("pull-sample")
             if sample is None:
+                await asyncio.sleep(3)
                 # print("No samples in appsink")
                 continue
 
@@ -189,13 +209,9 @@ async def pull_samples(appsink, model):
             frame = np.expand_dims(frame, axis=0).astype(np.float32)
 
             input = {model.get_inputs()[0].name: frame}
-            output = model.run(None, input)
+            output = predict(input)
 
-            print(f'output: {output}')
-
-
-
-
+            # print(f'output: {output}')
 
 
     except Exception as e:
