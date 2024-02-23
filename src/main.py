@@ -21,6 +21,7 @@ import signal
 
 HEIGHT = 640
 WIDTH = 640
+FORMAT = 'BGR'
 
 
 Gst.init(None)
@@ -83,7 +84,7 @@ def on_decodebin_added(_, pad):
     capsfilter = Gst.ElementFactory.make('capsfilter')
 
 
-    enforce_caps = Gst.Caps.from_string(f"video/x-raw,format=RGB,width={WIDTH},height={HEIGHT}")
+    enforce_caps = Gst.Caps.from_string(f"video/x-raw,format={FORMAT},width={WIDTH},height={HEIGHT}")
     capsfilter.set_property('caps', enforce_caps)
 
 
@@ -154,7 +155,6 @@ async def pull_samples(appsink):
     global pipeline
     try:
         while True:
-            await asyncio.sleep(6)
 
             state_return, state, pending_state = pipeline.get_state(Gst.CLOCK_TIME_NONE)
             if state == Gst.State.PAUSED:
@@ -163,12 +163,30 @@ async def pull_samples(appsink):
 
             sample = appsink.emit("pull-sample")
             if sample is None:
-                print("No samples in appsink")
+                await asyncio.sleep(1)
+                # print("No samples in appsink")
                 continue
 
             caps = sample.get_caps()
-            print(f"Pulled a sample from appsink \n")
-            print(f"Capabilities of a pulled sample: \n {caps.to_string()}")
+            # print(f"Capabilities of a pulled sample: \n {caps.to_string()}")
+
+            assert HEIGHT == caps.get_structure(0).get_value("height"), f'appsink receive height: {caps.get_structure(0).get_value("height")}, expected: {HEIGHT}'
+            assert WIDTH == caps.get_structure(0).get_value("width"), f'appsink receive width: {caps.get_structure(0).get_value("width")}, expected: {WIDTH}'
+
+            buffer = sample.get_buffer()
+            success, map_info = buffer.map(Gst.MapFlags.READ)
+
+            if not success:
+                raise RuntimeError("Could not map buffer data!")
+
+            numpy_frame = np.ndarray(
+                shape=(HEIGHT, WIDTH, 3),
+                dtype=np.uint8,
+                buffer=map_info.data)
+
+            print(f'Value from the numpy_frame: {numpy_frame[1,1,1]}')
+
+
 
     except Exception as e:
         print(f'Exception occured when trying to pull from the appsink: {e}')
