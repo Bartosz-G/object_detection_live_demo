@@ -11,16 +11,18 @@ gi.require_version('GstSdp', '1.0')
 from gi.repository import GstSdp
 
 from contextlib import asynccontextmanager
+from multiprocessing import shared_memory
 import onnxruntime as ort
 import numpy as np
+import multiprocessing
+import threading
 import asyncio
 import json
-import signal
 import os
 
 # For measuring performance
 from functools import wraps
-from time import perf_counter
+from time import perf_counter, sleep
 
 
 
@@ -168,7 +170,7 @@ pipeline.add(webrtcbin)
 
 
 
-async def pull_samples(appsink, model):
+async def __pull_samples(appsink, model):
     print(f'--- PULL SAMPLE CALLED ----')
     global pipeline
     @timing
@@ -213,24 +215,149 @@ async def pull_samples(appsink, model):
 
             # print(f'output: {output}')
 
-
     except Exception as e:
         print(f'Exception occured when trying to pull from the appsink: {e}')
 
 
-    # except asyncio.CancelledError:
-    #     print(f'Gracefully stopping pulling samples...')
 
+
+def pull_samples(appsink, connection, lock, process):
+    global pipeline
+    print('--- pipe_samples initiated ---')
+
+    try:
+        while True:
+            sample = appsink.emit("pull-sample")
+            if sample is None:
+                sleep(1)
+                print(f'No samples in the appsink')
+                continue
+
+            caps = sample.get_caps()
+
+            assert HEIGHT == caps.get_structure(0).get_value("height"), f'appsink receive height: {caps.get_structure(0).get_value("height")}, expected: {HEIGHT}'
+            assert WIDTH == caps.get_structure(0).get_value("width"), f'appsink receive width: {caps.get_structure(0).get_value("width")}, expected: {WIDTH}'
+
+            buffer = sample.get_buffer()
+            success, map_info = buffer.map(Gst.MapFlags.READ)
+
+            if not success:
+                raise RuntimeError("Could not map buffer data!")
+
+            frame = np.ndarray(
+                shape=(HEIGHT, WIDTH, 3),
+                dtype=np.uint8,
+                buffer=map_info.data) / 255
+
+            frame = np.transpose(frame, (2, 0, 1))
+
+            frame_nbytes, frame_dtype, frame_shape = frame.nbytes, frame.dtype, frame.shape
+
+            memory = shared_memory.SharedMemory(create=True, size=frame_nbytes)
+            init_message = {
+                'state': 'init',
+                'shared_memory_name': memory.name,
+                'dtype': frame_dtype,
+                'shape': frame_shape
+            }
+
+            connection.send(init_message)
+            break
+
+        while process.is_alive():
+            lock.acquire()
+            sample = appsink.emit("pull-sample")
+            if sample is None:
+                lock.release()
+                continue
+
+
+            buffer = sample.get_buffer()
+            _, map_info = buffer.map(Gst.MapFlags.READ)
+
+            frame = np.ndarray(
+                shape=(HEIGHT, WIDTH, 3),
+                dtype=np.uint8,
+                buffer=map_info.data) / 255
+
+            frame = np.transpose(frame, (2, 0, 1))
+
+            shared_array = np.ndarray(frame_shape, dtype=frame_dtype, buffer=memory.buf)
+            np.copyto(shared_array, frame)
+            lock.release()
+
+            connection.send({'state': 'cls'})
+
+    except Exception as e:
+        print(f'Exception in pull_samples occured: {e}')
+
+
+
+
+def classification_process(model_path, connection, lock):
+    try:
+        model = ort.InferenceSession(model_path)
+        memory, dtype, shape = None, None, None
+        while True:
+            message = connection.rec()
+
+            if message['state'] == 'cls':
+                lock.acquire()
+                received_frame = np.ndarray(shape, dtype=dtype, buffer=memory.buf)
+
+                ts = perf_counter()
+                frame = np.expand_dims(received_frame, axis=0).astype(np.float32)
+                input = {model.get_inputs()[0].name: frame}
+                output = model.run(None, input)
+                te = perf_counter()
+
+                lock.release()
+
+                elapsed_time = (te - ts) * 1000
+                execution_time = f'Executed in {elapsed_time:.2f} ms'
+
+                connection.send(execution_time)
+
+
+            if message['state'] == 'init':
+                shared_memory_name, dtype, shape = message['shared_memory_name'], message['dtype'], message['shape']
+                memory = shared_memory.SharedMemory(name=shared_memory_name)
+                continue
+
+            if message['state']  == 'close':
+                break
+
+    except Exception as e:
+        connection.send(e)
+
+
+def pipe_listener(connection, process):
+    print('--- pipe_listener initiated ---')
+
+    while process.is_alive():
+        message = connection.recv()
+        print(message)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global pipeline
-    model = ort.InferenceSession(os.path.join('models', MODEL_PATH))
-    pulling_task = asyncio.create_task(pull_samples(appsink=appsink, model=model))
+    global appsink
+    load_model_path = os.path.join('models', MODEL_PATH)
+    parent_connection, child_connection = multiprocessing.Pipe()
+    lock = multiprocessing.Lock()
+
+    process = multiprocessing.Process(target=classification_process, args=(load_model_path, child_connection, lock))
+    process.start()
+
+    listener_thread = threading.Thread(target=pipe_listener, args=(parent_connection, process), daemon=True)
+    listener_thread.start()
+
+    pulling_samples_thread = threading.Thread(target=pull_samples, args=(appsink, parent_connection, lock, process), daemon=True)
+    pulling_samples_thread.start()
 
     yield
 
-    pulling_task.cancel()
+
     pipeline.set_state(Gst.State.NULL)
 
 
