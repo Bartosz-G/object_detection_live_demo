@@ -50,3 +50,8 @@ variable "webserver_instance_name" {
   type = string
   default = "tech_demo_master"
 }
+
+variable "volume_size" {
+  type = number
+  default = 10
+}

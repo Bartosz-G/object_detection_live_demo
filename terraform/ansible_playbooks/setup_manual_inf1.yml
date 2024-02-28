@@ -5,15 +5,15 @@
   remote_user: ubuntu
 
   tasks:
+    - name: Add AWS Neuron GPG key
+      ansible.builtin.apt_key:
+        url: "https://apt.repos.neuron.amazonaws.com/GPG-PUB-KEY-AMAZON-AWS-NEURON.PUB"
+        state: present
+
     - name: Add AWS Neuron repository
       apt_repository:
         repo: "deb https://apt.repos.neuron.amazonaws.com {{ ansible_distribution_release }} main"
         filename: neuron
-        state: present
-
-    - name: Add AWS Neuron GPG key
-      apt_key:
-        url: "https://apt.repos.neuron.amazonaws.com/GPG-PUB-KEY-AMAZON-AWS-NEURON.PUB"
         state: present
 
     - name: Update all OS packages
@@ -30,17 +30,13 @@
         name: git
         state: present
 
-    - name: Install Neuron Driver
-      apt:
-        name: aws-neuronx-dkms
-        version: "2.*"
+    - name: Install Neuron Driver and Neuron Tools with a specific version
+      ansible.builtin.apt:
+        name:
+          - "aws-neuronx-dkms=2.*"
+          - "aws-neuronx-tools=2.*"
         state: present
-
-    - name: Install Neuron Tools
-      apt:
-        name: aws-neuronx-tools
-        version: "2.*"
-        state: present
+        update_cache: yes
 
     - name: Add Neuron bin to PATH
       lineinfile:

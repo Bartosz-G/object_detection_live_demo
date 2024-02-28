@@ -80,6 +80,10 @@ resource "aws_instance" "webserver" {
   key_name = aws_key_pair.webserver-key-pair.key_name
   associate_public_ip_address = true
 
+  root_block_device {
+    volume_size = var.volume_size
+  }
+
       user_data = <<-EOF
                 #!/bin/bash
                 sudo apt-get update
