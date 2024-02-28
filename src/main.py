@@ -18,6 +18,7 @@ import multiprocessing
 import threading
 import asyncio
 import json
+import psutil
 import os
 
 # For measuring performance
@@ -30,6 +31,8 @@ HEIGHT = 640
 WIDTH = 640
 FORMAT = 'BGR'
 MODEL_PATH = 'yolov8n.onnx'
+SERVER_CORE_AFFINITY = None
+MODEL_CORE_AFFINITY = None
 
 
 Gst.init(None)
@@ -169,58 +172,6 @@ pipeline.add(webrtcbin)
 
 
 
-
-async def __pull_samples(appsink, model):
-    print(f'--- PULL SAMPLE CALLED ----')
-    global pipeline
-    @timing
-    def predict(X):
-        return model.run(None, X)
-
-    try:
-        while True:
-            state_return, state, pending_state = pipeline.get_state(Gst.CLOCK_TIME_NONE)
-            if state == Gst.State.PAUSED:
-                print(f'Pipeline has been paused, continuing')
-                continue
-
-            sample = appsink.emit("pull-sample")
-            if sample is None:
-                await asyncio.sleep(3)
-                # print("No samples in appsink")
-                continue
-
-            caps = sample.get_caps()
-            # print(f"Capabilities of a pulled sample: \n {caps.to_string()}")
-
-            assert HEIGHT == caps.get_structure(0).get_value("height"), f'appsink receive height: {caps.get_structure(0).get_value("height")}, expected: {HEIGHT}'
-            assert WIDTH == caps.get_structure(0).get_value("width"), f'appsink receive width: {caps.get_structure(0).get_value("width")}, expected: {WIDTH}'
-
-            buffer = sample.get_buffer()
-            success, map_info = buffer.map(Gst.MapFlags.READ)
-
-            if not success:
-                raise RuntimeError("Could not map buffer data!")
-
-            frame = np.ndarray(
-                shape=(HEIGHT, WIDTH, 3),
-                dtype=np.uint8,
-                buffer=map_info.data) / 255
-
-            frame = np.transpose(frame, (2, 0, 1))
-            frame = np.expand_dims(frame, axis=0).astype(np.float32)
-
-            input = {model.get_inputs()[0].name: frame}
-            output = predict(input)
-
-            # print(f'output: {output}')
-
-    except Exception as e:
-        print(f'Exception occured when trying to pull from the appsink: {e}')
-
-
-
-
 def pull_samples(appsink, connection, lock, process):
     global pipeline
     print('--- pipe_samples initiated ---')
@@ -294,12 +245,20 @@ def pull_samples(appsink, connection, lock, process):
 
 
 
-def classification_process(model_path, connection, lock):
+def classification_process(model_path, connection, lock, process_affinity = None):
+    if process_affinity:
+        cls_process = psutil.Process()  # Gets the current process
+        cls_process.cpu_affinity(process_affinity)
+
     try:
+        # onnx_options = ort.SessionOptions()
+        # onnx_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        # onnx_options.intra_op_num_threads = 0
+        # onnx_options.execution_mode = ort.ExecutionMode.ORT_PARALLEL
         model = ort.InferenceSession(model_path)
         memory, dtype, shape = None, None, None
         while True:
-            message = connection.rec()
+            message = connection.recv()
 
             if message['state'] == 'cls':
                 lock.acquire()
@@ -342,11 +301,16 @@ def pipe_listener(connection, process):
 async def lifespan(app: FastAPI):
     global pipeline
     global appsink
+
+    if SERVER_CORE_AFFINITY:
+        server_process = psutil.Process()
+        server_process.cpu_affinity(SERVER_CORE_AFFINITY)
+
     load_model_path = os.path.join('models', MODEL_PATH)
     parent_connection, child_connection = multiprocessing.Pipe()
     lock = multiprocessing.Lock()
 
-    process = multiprocessing.Process(target=classification_process, args=(load_model_path, child_connection, lock))
+    process = multiprocessing.Process(target=classification_process, args=(load_model_path, child_connection, lock, MODEL_CORE_AFFINITY))
     process.start()
 
     listener_thread = threading.Thread(target=pipe_listener, args=(parent_connection, process), daemon=True)
