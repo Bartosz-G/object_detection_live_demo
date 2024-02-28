@@ -1,0 +1,129 @@
+---
+- name: Install and set up GStreamer and related packages
+  hosts: webservers
+  become: yes
+  remote_user: ubuntu
+
+  tasks:
+    - name: Add AWS Neuron repository
+      apt_repository:
+        repo: "deb https://apt.repos.neuron.amazonaws.com {{ ansible_distribution_release }} main"
+        filename: neuron
+        state: present
+
+    - name: Add AWS Neuron GPG key
+      apt_key:
+        url: "https://apt.repos.neuron.amazonaws.com/GPG-PUB-KEY-AMAZON-AWS-NEURON.PUB"
+        state: present
+
+    - name: Update all OS packages
+      apt:
+        update_cache: yes
+
+    - name: Install Linux headers
+      apt:
+        name: "linux-headers-{{ ansible_kernel }}"
+        state: present
+
+    - name: Install git
+      apt:
+        name: git
+        state: present
+
+    - name: Install Neuron Driver
+      apt:
+        name: aws-neuronx-dkms
+        version: "2.*"
+        state: present
+
+    - name: Install Neuron Tools
+      apt:
+        name: aws-neuronx-tools
+        version: "2.*"
+        state: present
+
+    - name: Add Neuron bin to PATH
+      lineinfile:
+        path: /etc/environment
+        line: 'PATH="/opt/aws/neuron/bin:{{ ansible_env.PATH }}"'
+        create: yes
+
+    - name: Upgrade all apt packages
+      ansible.builtin.apt:
+        upgrade: dist
+
+    - name: Install Python3, venv, pip, and g++
+      ansible.builtin.apt:
+        name:
+          - python3.10-venv
+          - python3-pip
+          - pkg-config
+          - g++
+        state: present
+        update_cache: yes
+
+    - name: Install GStreamer Python bindings for Python 3
+      ansible.builtin.apt:
+        name:
+          - libcairo2-dev
+          - gcc
+          - python3-dev
+          - libgirepository1.0-dev
+          - python3-gst-1.0
+        state: present
+
+    - name: Install GStreamer and base plugins
+      ansible.builtin.apt:
+        name:
+          - gir1.2-gst-plugins-bad-1.0
+          - gstreamer1.0-plugins-base
+          - gstreamer1.0-tools
+          - gstreamer1.0-plugins-good
+          - gstreamer1.0-plugins-bad
+          - gstreamer1.0-nice
+        state: present
+
+    - name: Install GStreamer development packages
+      ansible.builtin.apt:
+        name:
+          - libgstreamer1.0-dev
+          - libgstreamer-plugins-base1.0-dev
+        state: present
+
+
+    - name: Check if a reboot is needed
+      stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: Reboot the machine
+      ansible.builtin.reboot:
+        msg: "Rebooting for system updates"
+        connect_timeout: 5
+        reboot_timeout: 300
+        pre_reboot_delay: 0
+        post_reboot_delay: 30
+        test_command: uptime
+      when: reboot_required.stat.exists
+
+    - name: Create a Python virtual environment
+      ansible.builtin.command:
+        cmd: python3 -m venv gstreamer-venv
+        creates: gstreamer-venv
+
+    - name: Create a Python virtual environment
+      ansible.builtin.command:
+        cmd: python3 -m venv /home/ubuntu/gstreamer-venv
+        creates: /home/ubuntu/gstreamer-venv
+
+    - name: Change ownership of the virtual environment
+      ansible.builtin.file:
+        path: /home/ubuntu/gstreamer-venv
+        owner: ubuntu
+        group: ubuntu
+        recurse: yes
+
+
+
+
+

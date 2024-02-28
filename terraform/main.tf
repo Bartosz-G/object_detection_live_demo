@@ -96,8 +96,8 @@ module "webserver1" {
   subnet_id = module.network.public_subnet1_id
   webserver_ssh_key_path = "./keys/webserver1"
   webserver_security_group = aws_security_group.webserver_sg.id
-  ami = "ami-00efc25778562c229"
-  instance_type = "c7g.large"
+  ami = "ami-0e5f882be1900e43b" // ami-00efc25778562c229 - Arm64, ami-0e5f882be1900e43b - x86 (ubuntu22.04 jammy)
+  instance_type = "inf1.xlarge"
 }
 
 output "webserver_ip" {
