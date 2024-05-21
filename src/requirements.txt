@@ -26,4 +26,5 @@ numpy==1.26.4
 torch==1.13.1
 torchvision==0.14.1
 torch-neuron
+neuron-cc[tensorflow]
 protobuf
