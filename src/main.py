@@ -30,7 +30,7 @@ from time import perf_counter, sleep
 HEIGHT = 480
 WIDTH = 480
 FORMAT = 'RGB'
-MODEL_PATH = 'yolov8n.onnx'
+MODEL_PATH = 'rtdetr480_neuron.pt'
 SERVER_CORE_AFFINITY = None
 MODEL_CORE_AFFINITY = None
 
@@ -313,7 +313,7 @@ def model_process(model, receive_conn, post_conn, receive_lock, send_lock):
 
                 continue
 
-
+            #TODO: Refactor to not have to wait for a message and be able to respond to messages
             if msg['state'] == 'cls':
                 with receive_lock:
                     received_array = np.ndarray(shape, dtype=dtype, buffer=receive_shared_memory.buf)
@@ -341,77 +341,77 @@ def model_process(model, receive_conn, post_conn, receive_lock, send_lock):
         post_conn.send(e)
 
 
-        received_array[0, 0] = 1
-
-        with send_lock:
-            sent_array = np.ndarray(shape, dtype=dtype, buffer=send_shared_memory.buf)
-            np.copyto(sent_array, received_array)
-            elapsed_time = (te - ts) * 1000
-            execution_time = f'Executed in {elapsed_time:.2f} ms'
-
-        post_conn.send({'state': 'start', 'shape': shape, 'dtype':dtype})
 
 
 
 # Depretiated ===========
-def classification_process(model_path, connection, lock, process_affinity = None):
-    if process_affinity:
-        cls_process = psutil.Process()  # Gets the current process
-        cls_process.cpu_affinity(process_affinity)
-
-    try:
-        # onnx_options = ort.SessionOptions()
-        # onnx_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        # onnx_options.intra_op_num_threads = 0
-        # onnx_options.execution_mode = ort.ExecutionMode.ORT_PARALLEL
-        model = ort.InferenceSession(model_path)
-        memory, dtype, shape = None, None, None
-        while True:
-            message = connection.recv()
-
-            if message['state'] == 'cls':
-                lock.acquire()
-                received_frame = np.ndarray(shape, dtype=dtype, buffer=memory.buf)
-
-                ts = perf_counter()
-                frame = np.expand_dims(received_frame, axis=0).astype(np.float32)
-                input = {model.get_inputs()[0].name: frame}
-                output = model.run(None, input)
-                te = perf_counter()
-
-                lock.release()
-
-                elapsed_time = (te - ts) * 1000
-                execution_time = f'Executed in {elapsed_time:.2f} ms'
-
-                connection.send(execution_time)
-
-
-            if message['state'] == 'init':
-                shared_memory_name, dtype, shape = message['shared_memory_name'], message['dtype'], message['shape']
-                memory = shared_memory.SharedMemory(name=shared_memory_name)
-                continue
-
-            if message['state']  == 'close':
-                break
-
-    except Exception as e:
-        connection.send(e)
+# def classification_process(model_path, connection, lock, process_affinity = None):
+#     if process_affinity:
+#         cls_process = psutil.Process()  # Gets the current process
+#         cls_process.cpu_affinity(process_affinity)
+#
+#     try:
+#         # onnx_options = ort.SessionOptions()
+#         # onnx_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+#         # onnx_options.intra_op_num_threads = 0
+#         # onnx_options.execution_mode = ort.ExecutionMode.ORT_PARALLEL
+#         model = ort.InferenceSession(model_path)
+#         memory, dtype, shape = None, None, None
+#         while True:
+#             message = connection.recv()
+#
+#             if message['state'] == 'cls':
+#                 lock.acquire()
+#                 received_frame = np.ndarray(shape, dtype=dtype, buffer=memory.buf)
+#
+#                 ts = perf_counter()
+#                 frame = np.expand_dims(received_frame, axis=0).astype(np.float32)
+#                 input = {model.get_inputs()[0].name: frame}
+#                 output = model.run(None, input)
+#                 te = perf_counter()
+#
+#                 lock.release()
+#
+#                 elapsed_time = (te - ts) * 1000
+#                 execution_time = f'Executed in {elapsed_time:.2f} ms'
+#
+#                 connection.send(execution_time)
+#
+#
+#             if message['state'] == 'init':
+#                 shared_memory_name, dtype, shape = message['shared_memory_name'], message['dtype'], message['shape']
+#                 memory = shared_memory.SharedMemory(name=shared_memory_name)
+#                 continue
+#
+#             if message['state']  == 'close':
+#                 break
+#
+#     except Exception as e:
+#         connection.send(e)
 # Depretiated ================
 
 
 #TODO: Impement configurable post_processor
 
-def pipe_listener(connection, process):
+def prediction_listener(connection, process, lock, postprocessor):
     print('--- pipe_listener initiated ---')
 
     while process.is_alive():
         message = connection.recv()
+        if message['state'] == 'log':
+            print(f'received log from the model: {message['log']}')
+
+        if message['state'] == 'cls':
+            print(f'received classification from the model, latency: {message['latency']}')
+
+        if message['state'] == 'init':
+            continue
+
         #TODO: Implement time logging for testing
         #TODO: Implement postprocessing of frames
         #TODO: Implement pipe from main to pipe_listener to configure the postprocessor
         #TODO: Implement sending the frames back to the WebRTC datachannels
-        print(message)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -427,18 +427,38 @@ async def lifespan(app: FastAPI):
         server_process.cpu_affinity(SERVER_CORE_AFFINITY)
 
 
-    load_model_path = os.path.join('models', MODEL_PATH)
-    parent_connection, child_connection = multiprocessing.Pipe()
-    lock = multiprocessing.Lock()
+    model = torch.jit.load('models', MODEL_PATH)
+    pull_samples_to_model, from_pull_samples = multiprocessing.Pipe()
+    model_to_postprocessor, from_model = multiprocessing.Pipe()
+    pull_samples_lock = multiprocessing.Lock()
+    postprocessor_lock = multiprocessing.Lock()
 
-    process = multiprocessing.Process(target=classification_process, args=(load_model_path, child_connection, lock, MODEL_CORE_AFFINITY))
-    process.start()
 
-    listener_thread = threading.Thread(target=pipe_listener, args=(parent_connection, process), daemon=True)
-    listener_thread.start()
+    prediction_process = multiprocessing.Process(target=model_process,
+                                                 kwargs={'model':model,
+                                                         'receive_conn':from_pull_samples,
+                                                         'post_conn':model_to_postprocessor,
+                                                         'receive_lock':pull_samples_lock,
+                                                         'send_lock':postprocessor_lock})
+    prediction_process.start()
 
-    pulling_samples_thread = threading.Thread(target=pull_samples, args=(appsink, parent_connection, lock, process), daemon=True)
-    pulling_samples_thread.start()
+
+
+    sample_puller = threading.Thread(target=pull_samples,
+                                     kwargs={'appsink':appsink,
+                                             'connection':pull_samples_to_model,
+                                             'lock':pull_samples_lock,
+                                             'process':prediction_process},
+                                     daemon=True)
+    sample_puller.start()
+
+    prediction_postprocessor = threading.Thread(target=prediction_listener,
+                                                kwargs={'connection':from_model,
+                                                        'process': prediction_process,
+                                                        'lock': postprocessor_lock,
+                                                        'postprocessor': None},
+                                                daemon=True)
+    prediction_postprocessor.start()
 
     yield
 
