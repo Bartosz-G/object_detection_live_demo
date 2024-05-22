@@ -12,7 +12,7 @@ from gi.repository import GstSdp
 
 from contextlib import asynccontextmanager
 from multiprocessing import shared_memory
-import onnxruntime as ort
+import torch
 import numpy as np
 import multiprocessing
 import threading
@@ -27,9 +27,9 @@ from time import perf_counter, sleep
 
 
 
-HEIGHT = 640
-WIDTH = 640
-FORMAT = 'BGR'
+HEIGHT = 480
+WIDTH = 480
+FORMAT = 'RGB'
 MODEL_PATH = 'yolov8n.onnx'
 SERVER_CORE_AFFINITY = None
 MODEL_CORE_AFFINITY = None
@@ -50,7 +50,7 @@ def timing(f):
         return result
     return wrap
 
-
+# Gstreamer WebRTC connection ===========================
 def on_negotiation_needed(*args):
     global websocket_connection
     assert websocket_connection, "on_negotiation was called before websocket_connection was created"
@@ -144,7 +144,7 @@ def on_stream_added(_, pad):
 
     print(f'----- Everything connected, stream should be flowing')
 
-
+# Gstreamer WebRTC connection ===========================
 
 
 
@@ -169,6 +169,8 @@ webrtcbin.connect('pad-added', on_stream_added)
 pipeline = Gst.Pipeline.new("pipeline")
 pipeline.add(webrtcbin)
 
+
+#TODO: Implement a data channel for sending back predictions
 
 
 
@@ -243,8 +245,61 @@ def pull_samples(appsink, connection, lock, process):
         print(f'Exception in pull_samples occured: {e}')
 
 
+def model_process(model, receive_conn, post_conn, send_boxes_shm_name, send_labels_shm_name, receive_lock, send_lock):
+    send_boxes_shared_memory = multiprocessing.shared_memory.SharedMemory(name=send_boxes_shm_name)
+    send_labels_shared_memory = multiprocessing.shared_memory.SharedMemory(name=send_labels_shm_name)
+
+    while True:
+        msg = receive_conn.recv()
+
+        if msg['state'] not in ('cls', 'time', 'init', 'close'):
+            break
+
+        if msg['state'] == 'init':
+            receive_shm_name, dtype, shape = msg['shared_memory_name'], msg['dtype'], msg['shape']
+            receive_shared_memory = multiprocessing.shared_memory.SharedMemory(name=receive_shm_name)
+
+            #TODO: dynamically create bbox and labels shared memory and send init with adresses
+
+            continue
 
 
+
+        shape, dtype = msg['shape'], msg['dtype']
+
+        with receive_lock:
+            received_array = np.ndarray(shape, dtype=dtype, buffer=receive_shared_memory.buf)
+
+        frame = torch.from_numpy(received_array).float().unsqueeze(0)
+
+        if msg['state'] == 'time':
+            ts = perf_counter()
+            output = model(frame)
+            te = perf_counter()
+
+            # Unpacking bboxes and labels
+            logits, bbox_pred = output[0].numpy(), output[1].numpy()
+
+            #TODO: Implement sending the times to the pipe listener, over the log
+            #TODO: Implement sending over the output to the posprocessor
+
+
+        #TODO: Implement sending over the predictions
+
+
+        received_array[0, 0] = 1
+
+        with send_lock:
+            sent_array = np.ndarray(shape, dtype=dtype, buffer=send_shared_memory.buf)
+            np.copyto(sent_array, received_array)
+            elapsed_time = (te - ts) * 1000
+            execution_time = f'Executed in {elapsed_time:.2f} ms'
+
+        post_conn.send({'state': 'start', 'shape': shape, 'dtype':dtype})
+
+
+
+# Depretiated ===========
 def classification_process(model_path, connection, lock, process_affinity = None):
     if process_affinity:
         cls_process = psutil.Process()  # Gets the current process
@@ -288,13 +343,20 @@ def classification_process(model_path, connection, lock, process_affinity = None
 
     except Exception as e:
         connection.send(e)
+# Depretiated ================
 
+
+#TODO: Impement configurable post_processor
 
 def pipe_listener(connection, process):
     print('--- pipe_listener initiated ---')
 
     while process.is_alive():
         message = connection.recv()
+        #TODO: Implement time logging for testing
+        #TODO: Implement postprocessing of frames
+        #TODO: Implement pipe from main to pipe_listener to configure the postprocessor
+        #TODO: Implement sending the frames back to the WebRTC datachannels
         print(message)
 
 @asynccontextmanager
@@ -302,9 +364,14 @@ async def lifespan(app: FastAPI):
     global pipeline
     global appsink
 
+    #TODO: Implement rtdetr cls instead of yolo
+    #TODO: Implement appsrc for sending frames to the frontend
+
+
     if SERVER_CORE_AFFINITY:
         server_process = psutil.Process()
         server_process.cpu_affinity(SERVER_CORE_AFFINITY)
+
 
     load_model_path = os.path.join('models', MODEL_PATH)
     parent_connection, child_connection = multiprocessing.Pipe()
@@ -321,7 +388,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
-
+    #TODO: Implement properly closing all the threads and processes
     pipeline.set_state(Gst.State.NULL)
 
 
