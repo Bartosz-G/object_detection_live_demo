@@ -257,8 +257,12 @@ def model_process(model, receive_conn, post_conn, receive_lock, send_lock):
         while True:
             msg = receive_conn.recv()
 
-            if msg['state'] not in ('cls', 'time', 'init', 'close'):
-                break
+            if msg['state'] not in ('cls', 'init', 'close'):
+                raise Exception(f'received an unrecognised message from receive connection: {msg}')
+
+            if msg['state'] == 'log':
+                post_conn.send(msg)
+                continue
 
             if msg['state'] == 'init':
                 post_conn.send({'state': 'log', 'log': 'starting_warmup_process'})
@@ -310,27 +314,29 @@ def model_process(model, receive_conn, post_conn, receive_lock, send_lock):
                 continue
 
 
+            if msg['state'] == 'cls':
+                with receive_lock:
+                    received_array = np.ndarray(shape, dtype=dtype, buffer=receive_shared_memory.buf)
 
-            shape, dtype = msg['shape'], msg['dtype']
+                frame = torch.from_numpy(received_array).float().unsqueeze(0)
 
-            with receive_lock:
-                received_array = np.ndarray(shape, dtype=dtype, buffer=receive_shared_memory.buf)
-
-            frame = torch.from_numpy(received_array).float().unsqueeze(0)
-
-            if msg['state'] == 'time':
                 ts = perf_counter()
                 output = model(frame)
                 te = perf_counter()
+                elapsed_time = (te - ts) * 1000
+                latency = elapsed_time
 
                 # Unpacking bboxes and labels
                 logits, bbox_pred = output[0].numpy(), output[1].numpy()
 
-                #TODO: Implement sending the times to the pipe listener, over the log
-                #TODO: Implement sending over the output to the posprocessor
+                with send_lock:
+                    shared_logits = np.ndarray(logits_shape, dtype=logits_dtype, buffer=send_logits_shared_memory.buf)
+                    np.copyto(shared_logits, logits)
+                    shared_bboxes = np.ndarray(bboxes_shape, dtype=bboxes.dtype, buffer=send_bboxes_shared_memory.buf)
+                    np.copyto(shared_bboxes, bboxes)
 
+                post_conn.send({'state': 'cls', 'latency': latency})
 
-            #TODO: Implement sending over the predictions
     except Exception as e:
         post_conn.send(e)
 
