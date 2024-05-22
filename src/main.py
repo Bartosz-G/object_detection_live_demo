@@ -197,31 +197,35 @@ def pull_samples(appsink, connection, lock, process):
             if not success:
                 raise RuntimeError("Could not map buffer data!")
 
-            frame = np.ndarray(
+            warmup_frame = np.ndarray(
                 shape=(HEIGHT, WIDTH, 3),
                 dtype=np.uint8,
                 buffer=map_info.data) / 255
 
-            frame = np.transpose(frame, (2, 0, 1))
+            warmup_frame = np.transpose(warmup_frame, (2, 0, 1))
 
-            frame_nbytes, frame_dtype, frame_shape = frame.nbytes, frame.dtype, frame.shape
+            frame_nbytes, frame_dtype, frame_shape = warmup_frame.nbytes, warmup_frame.dtype, warmup_frame.shape
 
             memory = shared_memory.SharedMemory(create=True, size=frame_nbytes)
+
+            with lock:
+                send_array = np.ndarray(frame_shape, dtype=frame_dtype, buffer=memory.buf)
+                np.copyto(send_array, warmup_frame)
+
             init_message = {
                 'state': 'init',
                 'shared_memory_name': memory.name,
                 'dtype': frame_dtype,
-                'shape': frame_shape
+                'shape': frame_shape,
+                'nbytes': frame_nbytes
             }
 
             connection.send(init_message)
             break
 
         while process.is_alive():
-            lock.acquire()
             sample = appsink.emit("pull-sample")
             if sample is None:
-                lock.release()
                 continue
 
 
@@ -234,10 +238,10 @@ def pull_samples(appsink, connection, lock, process):
                 buffer=map_info.data) / 255
 
             frame = np.transpose(frame, (2, 0, 1))
+            with lock:
+                shared_array = np.ndarray(frame_shape, dtype=frame_dtype, buffer=memory.buf)
+                np.copyto(shared_array, frame)
 
-            shared_array = np.ndarray(frame_shape, dtype=frame_dtype, buffer=memory.buf)
-            np.copyto(shared_array, frame)
-            lock.release()
 
             connection.send({'state': 'cls'})
 
@@ -245,46 +249,90 @@ def pull_samples(appsink, connection, lock, process):
         print(f'Exception in pull_samples occured: {e}')
 
 
-def model_process(model, receive_conn, post_conn, send_boxes_shm_name, send_labels_shm_name, receive_lock, send_lock):
-    send_boxes_shared_memory = multiprocessing.shared_memory.SharedMemory(name=send_boxes_shm_name)
-    send_labels_shared_memory = multiprocessing.shared_memory.SharedMemory(name=send_labels_shm_name)
+def model_process(model, receive_conn, post_conn, receive_lock, send_lock):
+    # send_boxes_shared_memory = multiprocessing.shared_memory.SharedMemory(name=send_boxes_shm_name)
+    # send_labels_shared_memory = multiprocessing.shared_memory.SharedMemory(name=send_labels_shm_name)
 
-    while True:
-        msg = receive_conn.recv()
+    try:
+        while True:
+            msg = receive_conn.recv()
 
-        if msg['state'] not in ('cls', 'time', 'init', 'close'):
-            break
+            if msg['state'] not in ('cls', 'time', 'init', 'close'):
+                break
 
-        if msg['state'] == 'init':
-            receive_shm_name, dtype, shape = msg['shared_memory_name'], msg['dtype'], msg['shape']
-            receive_shared_memory = multiprocessing.shared_memory.SharedMemory(name=receive_shm_name)
+            if msg['state'] == 'init':
+                post_conn.send({'state': 'log', 'log': 'starting_warmup_process'})
+                receive_shm_name, dtype, shape = msg['shared_memory_name'], msg['dtype'], msg['shape']
+                receive_shared_memory = multiprocessing.shared_memory.SharedMemory(name=receive_shm_name)
 
-            #TODO: dynamically create bbox and labels shared memory and send init with adresses
+                post_conn.send({'state': 'log', 'log': 'pulling_warmup_frame'})
+                with receive_lock:
+                    warmup_frame = np.ndarray(shape, dtype=dtype, buffer=receive_shared_memory.buf)
 
-            continue
+                post_conn.send({'state':'log', 'log': 'warming-up model'})
+                warmup_frame = torch.from_numpy(warmup_frame).unsqueeze(0).float()
+                output = model(warmup_frame)
+                post_conn.send({'state': 'log', 'log': 'warming-up complete'})
+
+                logits, bboxes = output[0].numpy(), output[1].numpy()
+                logits_nbytes, logits_dtype, logits_shape = logits.nbytes, logits.dtype, logits.shape
+                bboxes_nbytes, bboxes_dtype, bboxes_shape = bboxes.nbytes, bboxes.dtype, bboxes.shape
+
+                post_conn.send({'state':'log', 'log': 'creating shared memory for the postprocessor'})
+                send_logits_shared_memory = multiprocessing.shared_memory.SharedMemory(create=True, size=logits_nbytes)
+                send_bboxes_shared_memory = multiprocessing.shared_memory.SharedMemory(create=True, size=bboxes_nbytes)
+
+                post_conn.send({'state': 'log', 'log': 'putting warmup logits and frames to memory'})
+                with send_lock:
+                    shared_logits = np.ndarray(logits_shape, dtype=logits_dtype, buffer=send_logits_shared_memory.buf)
+                    np.copyto(shared_logits, logits)
+                    shared_bboxes = np.ndarray(bboxes_shape, dtype=bboxes.dtype, buffer=send_bboxes_shared_memory.buf)
+                    np.copyto(shared_bboxes, bboxes)
+
+                init_message = {
+                    'state': 'init',
+                    'logits': {
+                        'shared_memory_name': send_logits_shared_memory.name,
+                        'dtype': logits_dtype,
+                        'shape': logits_shape,
+                        'nbytes': logits_nbytes
+                    },
+                    'bboxes': {
+                        'shared_memory_name': send_bboxes_shared_memory.name,
+                        'dtype': bboxes_dtype,
+                        'shape': bboxes_shape,
+                        'nbytes': bboxes_nbytes
+                    }
+                }
+
+                post_conn.send(init_message)
+
+                continue
 
 
 
-        shape, dtype = msg['shape'], msg['dtype']
+            shape, dtype = msg['shape'], msg['dtype']
 
-        with receive_lock:
-            received_array = np.ndarray(shape, dtype=dtype, buffer=receive_shared_memory.buf)
+            with receive_lock:
+                received_array = np.ndarray(shape, dtype=dtype, buffer=receive_shared_memory.buf)
 
-        frame = torch.from_numpy(received_array).float().unsqueeze(0)
+            frame = torch.from_numpy(received_array).float().unsqueeze(0)
 
-        if msg['state'] == 'time':
-            ts = perf_counter()
-            output = model(frame)
-            te = perf_counter()
+            if msg['state'] == 'time':
+                ts = perf_counter()
+                output = model(frame)
+                te = perf_counter()
 
-            # Unpacking bboxes and labels
-            logits, bbox_pred = output[0].numpy(), output[1].numpy()
+                # Unpacking bboxes and labels
+                logits, bbox_pred = output[0].numpy(), output[1].numpy()
 
-            #TODO: Implement sending the times to the pipe listener, over the log
-            #TODO: Implement sending over the output to the posprocessor
+                #TODO: Implement sending the times to the pipe listener, over the log
+                #TODO: Implement sending over the output to the posprocessor
 
 
-        #TODO: Implement sending over the predictions
+            #TODO: Implement sending over the predictions
+    except Exception as e:
+        post_conn.send(e)
 
 
         received_array[0, 0] = 1
