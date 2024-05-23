@@ -13,12 +13,12 @@ from gi.repository import GstSdp
 from contextlib import asynccontextmanager
 from multiprocessing import shared_memory
 import torch
+import torch_neuron
 import numpy as np
 import multiprocessing
 import threading
 import asyncio
 import json
-import psutil
 import os
 
 # For measuring performance
@@ -249,9 +249,11 @@ def pull_samples(appsink, connection, lock, process):
         print(f'Exception in pull_samples occured: {e}')
 
 
-def model_process(model, receive_conn, post_conn, receive_lock, send_lock):
+def model_process(model_path, receive_conn, post_conn, receive_lock, send_lock):
     # send_boxes_shared_memory = multiprocessing.shared_memory.SharedMemory(name=send_boxes_shm_name)
     # send_labels_shared_memory = multiprocessing.shared_memory.SharedMemory(name=send_labels_shm_name)
+
+    model = torch.jit.load(model_path)
 
     try:
         while True:
@@ -341,54 +343,28 @@ def model_process(model, receive_conn, post_conn, receive_lock, send_lock):
         post_conn.send(e)
 
 
+class postprocessor:
+    def __init__(self, topk, lock):
+        self.lock = lock
+        self.topk = topk
 
+    def set_topk(self, topk):
+        with self.lock:
+            self.topk = topk
 
+    def __call__(self, logits, bbox_pred, *args, **kwargs):
+        with self.lock:
+            scores = torch.sigmoid(logits)
+            scores, index = torch.topk(scores.flatten(1), self.topk, axis=-1)
+            labels = index % 80
+            index = index // 80
+            bboxes = bbox_pred.gather(dim=1, index=index.unsqueeze(-1).repeat(1, 1, bbox_pred.shape[-1]))
+            labels = [l for l in labels.flatten()]
 
-# Depretiated ===========
-# def classification_process(model_path, connection, lock, process_affinity = None):
-#     if process_affinity:
-#         cls_process = psutil.Process()  # Gets the current process
-#         cls_process.cpu_affinity(process_affinity)
-#
-#     try:
-#         # onnx_options = ort.SessionOptions()
-#         # onnx_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-#         # onnx_options.intra_op_num_threads = 0
-#         # onnx_options.execution_mode = ort.ExecutionMode.ORT_PARALLEL
-#         model = ort.InferenceSession(model_path)
-#         memory, dtype, shape = None, None, None
-#         while True:
-#             message = connection.recv()
-#
-#             if message['state'] == 'cls':
-#                 lock.acquire()
-#                 received_frame = np.ndarray(shape, dtype=dtype, buffer=memory.buf)
-#
-#                 ts = perf_counter()
-#                 frame = np.expand_dims(received_frame, axis=0).astype(np.float32)
-#                 input = {model.get_inputs()[0].name: frame}
-#                 output = model.run(None, input)
-#                 te = perf_counter()
-#
-#                 lock.release()
-#
-#                 elapsed_time = (te - ts) * 1000
-#                 execution_time = f'Executed in {elapsed_time:.2f} ms'
-#
-#                 connection.send(execution_time)
-#
-#
-#             if message['state'] == 'init':
-#                 shared_memory_name, dtype, shape = message['shared_memory_name'], message['dtype'], message['shape']
-#                 memory = shared_memory.SharedMemory(name=shared_memory_name)
-#                 continue
-#
-#             if message['state']  == 'close':
-#                 break
-#
-#     except Exception as e:
-#         connection.send(e)
-# Depretiated ================
+            #TODO: Implement returning a json serializable dtype for bboxes
+
+            return labels, bboxes
+
 
 
 #TODO: Impement configurable post_processor
@@ -399,13 +375,40 @@ def prediction_listener(connection, process, lock, postprocessor):
     while process.is_alive():
         message = connection.recv()
         if message['state'] == 'log':
-            print(f'received log from the model: {message['log']}')
-
-        if message['state'] == 'cls':
-            print(f'received classification from the model, latency: {message['latency']}')
+            print(f"[model]: {message['log']}")
+            continue
 
         if message['state'] == 'init':
+            print(f"[prediction_listener]: received init from the model")
+            init_logits = message['logits']
+            init_bboxes = message['bboxes']
+
+            logits_shm_name, logits_nbytes, logits_dtype, logits_shape = (
+                init_logits['shared_memory_name'], init_logits['nbytes'], init_logits['dtype'], init_logits['shape'])
+            bboxes_shm_name, bboxes_nbytes, bboxes_dtype, bboxes_shape = (
+                init_logits['shared_memory_name'], init_bboxes['nbytes'], init_bboxes['dtype'], init_bboxes['shape'])
+
+            logits_shared_memory = multiprocessing.shared_memory.SharedMemory(name=logits_shm_name)
+            bboxes_shared_memory = multiprocessing.shared_memory.SharedMemory(name=bboxes_shm_name)
+
+            print(f"[prediction_listener]: trying to access logits and bboxes")
+            with lock:
+                logits = np.ndarray(logits_shape, dtype=logits_dtype, buffer=logits_shared_memory.buf)
+                bboxes = np.ndarray(bboxes_shape, dtype=bboxes_dtype, buffer=bboxes_shared_memory.buf)
+
+            print(f"[prediction_listener], logits: {logits.shape}, bboxes: {bboxes.shape}")
+            print(f'[prediction_listener], init successful!')
             continue
+
+        if message['state'] == 'cls':
+            print(f"[model] latency: {message['latency']}")
+            with lock:
+                logits = np.ndarray(logits_shape, dtype=logits_dtype, buffer=logits_shared_memory.buf)
+                bboxes = np.ndarray(bboxes_shape, dtype=bboxes_dtype, buffer=bboxes_shared_memory.buf)
+            print(f"[prediction_listener], logits: {logits.shape}, bboxes: {bboxes.shape}")
+            continue
+
+
 
         #TODO: Implement time logging for testing
         #TODO: Implement postprocessing of frames
@@ -422,12 +425,12 @@ async def lifespan(app: FastAPI):
     #TODO: Implement appsrc for sending frames to the frontend
 
 
-    if SERVER_CORE_AFFINITY:
-        server_process = psutil.Process()
-        server_process.cpu_affinity(SERVER_CORE_AFFINITY)
+    # if SERVER_CORE_AFFINITY:
+    #     server_process = psutil.Process()
+    #     server_process.cpu_affinity(SERVER_CORE_AFFINITY)
 
 
-    model = torch.jit.load('models', MODEL_PATH)
+    model_path = os.path.join('models', MODEL_PATH)
     pull_samples_to_model, from_pull_samples = multiprocessing.Pipe()
     model_to_postprocessor, from_model = multiprocessing.Pipe()
     pull_samples_lock = multiprocessing.Lock()
@@ -435,7 +438,7 @@ async def lifespan(app: FastAPI):
 
 
     prediction_process = multiprocessing.Process(target=model_process,
-                                                 kwargs={'model':model,
+                                                 kwargs={'model_path':model_path,
                                                          'receive_conn':from_pull_samples,
                                                          'post_conn':model_to_postprocessor,
                                                          'receive_lock':pull_samples_lock,
