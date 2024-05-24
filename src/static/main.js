@@ -120,11 +120,11 @@ let onWebsocketMessage = async (event) => {
 
 }
 
-let onWebsocketError = () => {} // Impl Websocket error handling
+let onWebsocketError = () => {} //TODO: Impl Websocket error handling
 
-let onWebsocketClose = () => {} // Impl Socket Close handling
+let onWebsocketClose = () => {} //TODO: Impl Socket Close handling
 
-let websocketConnect = () => {} // Refactor later
+let websocketConnect = () => {} //TODO: Refactor later
 
 
 
@@ -150,6 +150,33 @@ let init = async () => {
         });
 
     peerConnection.onicecandidate = onIceCandidate;
+
+    // ---------- Data Channel ----------
+    dataChannel = peerConnection.createDataChannel("DataChannel");
+
+    dataChannel.onopen = () => {
+        console.log("Data channel is open");
+        dataChannel.send("Hello from the client!");
+    };
+
+    dataChannel.onmessage = (event) => {
+        console.log("Data channel message received:", event.data);
+    };
+
+    dataChannel.onclose = () => {
+        console.log("Data channel is closed");
+    };
+
+    dataChannel.onerror = (error) => {
+        console.error("Data channel error:", error);
+    };
+
+    peerConnection.ondatachannel = (event) => {
+        const receiveChannel = event.channel;
+        receiveChannel.onmessage = (event) => {
+            console.log("Received message from server:", event.data);
+        };
+    };
 
     // ------- Monitoring ICE negotiations ---------
     peerConnection.onicecandidateerror = e => {

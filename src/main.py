@@ -161,8 +161,10 @@ def on_data_channel_message(channel, data):
 
 def send_data_channel_message(data):
     global data_channel
+    print(f"[DataChannel], dir: {dir(data_channel)}")
     if data_channel:
-        data_channel.send(data)
+        glib_bytes = GLib.Bytes.new(data)
+        data_channel.send_data(glib_bytes)
 
 def on_data_channel(_, data_channel):
     print("[DataChannel], created")
@@ -276,8 +278,6 @@ def pull_samples(appsink, connection, lock, process):
 
 
 def model_process(model_path, receive_conn, post_conn, receive_lock, send_lock):
-    # send_boxes_shared_memory = multiprocessing.shared_memory.SharedMemory(name=send_boxes_shm_name)
-    # send_labels_shared_memory = multiprocessing.shared_memory.SharedMemory(name=send_labels_shm_name)
 
     model = torch.jit.load(model_path)
 
@@ -444,10 +444,9 @@ def prediction_listener(connection, process, lock, postprocessor):
                 logits = np.ndarray(logits_shape, dtype=logits_dtype, buffer=logits_shared_memory.buf)
                 bboxes = np.ndarray(bboxes_shape, dtype=bboxes_dtype, buffer=bboxes_shared_memory.buf)
             labels, bboxes = postprocessor(logits, bboxes)
-            print(f"[prediction_listener], post_logits_shape: {labels.shape}, post_bboxes_shape: {bboxes.shape}")
-            print(f"[prediction_listener], post_logits_dtype: {labels.dtype}, post_bboxes_dtype: {bboxes.dtype}")
+            # print(f"[prediction_listener], post_logits_shape: {labels.shape}, post_bboxes_shape: {bboxes.shape}")
+            # print(f"[prediction_listener], post_logits_dtype: {labels.dtype}, post_bboxes_dtype: {bboxes.dtype}")
             predictions_bytearray = encode_predictions(latency=latency, labels=labels, bboxes=bboxes)
-            print(f'[prediction_listener], pred bytearray len: {predictions_bytearray}')
 
             continue
 
