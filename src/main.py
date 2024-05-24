@@ -33,6 +33,7 @@ FORMAT = 'RGB'
 MODEL_PATH = 'rtdetr480_neuron.pt'
 SERVER_CORE_AFFINITY = None
 MODEL_CORE_AFFINITY = None
+TOPK = 100
 
 
 Gst.init(None)
@@ -343,7 +344,7 @@ def model_process(model_path, receive_conn, post_conn, receive_lock, send_lock):
         post_conn.send(e)
 
 
-class postprocessor:
+class PostProcessor:
     def __init__(self, topk, lock):
         self.lock = lock
         self.topk = topk
@@ -354,11 +355,12 @@ class postprocessor:
 
     def __call__(self, logits, bbox_pred, *args, **kwargs):
         with self.lock:
+            logits, bbox_pred = torch.from_numpy(logits), torch.from_numpy(bbox_pred)
             scores = torch.sigmoid(logits)
             scores, index = torch.topk(scores.flatten(1), self.topk, axis=-1)
             labels = index % 80
             index = index // 80
-            bboxes = bbox_pred.gather(dim=1, index=index.unsqueeze(-1).repeat(1, 1, bbox_pred.shape[-1]))
+            bboxes = bbox_pred.gather(dim=1, index=index.unsqueeze(-1).repeat(1, 1, bbox_pred.shape[-1])).unsqueeze(0)
             labels = [l for l in labels.flatten()]
 
             #TODO: Implement returning a json serializable dtype for bboxes
@@ -368,7 +370,6 @@ class postprocessor:
 
 
 #TODO: Impement configurable post_processor
-
 def prediction_listener(connection, process, lock, postprocessor):
     print('--- pipe_listener initiated ---')
 
@@ -405,7 +406,8 @@ def prediction_listener(connection, process, lock, postprocessor):
             with lock:
                 logits = np.ndarray(logits_shape, dtype=logits_dtype, buffer=logits_shared_memory.buf)
                 bboxes = np.ndarray(bboxes_shape, dtype=bboxes_dtype, buffer=bboxes_shared_memory.buf)
-            print(f"[prediction_listener], logits: {logits.shape}, bboxes: {bboxes.shape}")
+            labels, bboxes = postprocessor(logits, bboxes)
+            print(f"[prediction_listener], post_logits: {len(labels)}, post_bboxes: {bboxes.shape}")
             continue
 
 
@@ -434,7 +436,11 @@ async def lifespan(app: FastAPI):
     pull_samples_to_model, from_pull_samples = multiprocessing.Pipe()
     model_to_postprocessor, from_model = multiprocessing.Pipe()
     pull_samples_lock = multiprocessing.Lock()
-    postprocessor_lock = multiprocessing.Lock()
+    prediction_listener_lock = multiprocessing.Lock()
+    post_processor_lock = multiprocessing.Lock()
+
+    post_processor = PostProcessor(TOPK, post_processor_lock)
+
 
 
     prediction_process = multiprocessing.Process(target=model_process,
@@ -442,7 +448,7 @@ async def lifespan(app: FastAPI):
                                                          'receive_conn':from_pull_samples,
                                                          'post_conn':model_to_postprocessor,
                                                          'receive_lock':pull_samples_lock,
-                                                         'send_lock':postprocessor_lock})
+                                                         'send_lock':prediction_listener_lock})
     prediction_process.start()
 
 
@@ -458,8 +464,8 @@ async def lifespan(app: FastAPI):
     prediction_postprocessor = threading.Thread(target=prediction_listener,
                                                 kwargs={'connection':from_model,
                                                         'process': prediction_process,
-                                                        'lock': postprocessor_lock,
-                                                        'postprocessor': None},
+                                                        'lock': prediction_listener_lock,
+                                                        'postprocessor': post_processor},
                                                 daemon=True)
     prediction_postprocessor.start()
 
