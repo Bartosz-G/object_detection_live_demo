@@ -360,12 +360,23 @@ class PostProcessor:
             scores, index = torch.topk(scores.flatten(1), self.topk, axis=-1)
             labels = index % 80
             index = index // 80
-            bboxes = bbox_pred.gather(dim=1, index=index.unsqueeze(-1).repeat(1, 1, bbox_pred.shape[-1])).unsqueeze(0)
-            labels = [l for l in labels.flatten()]
-
-            #TODO: Implement returning a json serializable dtype for bboxes
+            bboxes = bbox_pred.gather(dim=1, index=index.unsqueeze(-1).repeat(1, 1, bbox_pred.shape[-1])).squeeze(0).numpy().astype(np.float32)
+            labels = labels.flatten().numpy().astype(np.uint8)
 
             return labels, bboxes
+
+
+def encode_predictions(latency, labels, bboxes):
+    latency = np.uint8(latency)
+
+    labels = labels.tobytes()
+    bboxes = bboxes.tobytes()
+
+    byteslength_labels, byteslength_bboxes = len(labels), len(bboxes)
+    header = latency.tobytes() + byteslength_labels.to_bytes(4, byteorder='big') + byteslength_bboxes.to_bytes(4, byteorder='big')
+
+    return header + labels + bboxes
+
 
 
 
@@ -402,12 +413,17 @@ def prediction_listener(connection, process, lock, postprocessor):
             continue
 
         if message['state'] == 'cls':
-            print(f"[model] latency: {message['latency']}")
+            latency = message['latency']
+            print(f"[model] latency: {latency}")
             with lock:
                 logits = np.ndarray(logits_shape, dtype=logits_dtype, buffer=logits_shared_memory.buf)
                 bboxes = np.ndarray(bboxes_shape, dtype=bboxes_dtype, buffer=bboxes_shared_memory.buf)
             labels, bboxes = postprocessor(logits, bboxes)
-            print(f"[prediction_listener], post_logits: {len(labels)}, post_bboxes: {bboxes.shape}")
+            print(f"[prediction_listener], post_logits_shape: {labels.shape}, post_bboxes_shape: {bboxes.shape}")
+            print(f"[prediction_listener], post_logits_dtype: {labels.dtype}, post_bboxes_dtype: {bboxes.dtype}")
+            predictions_bytearray = encode_predictions(latency=latency, labels=labels, bboxes=bboxes)
+            print(f'[prediction_listener], pred bytearray len: {predictions_bytearray}')
+
             continue
 
 
