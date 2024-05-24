@@ -161,10 +161,8 @@ def on_data_channel_message(channel, data):
 
 def send_data_channel_message(data):
     global data_channel
-    print(f"[DataChannel], dir: {dir(data_channel)}")
-    if data_channel:
-        glib_bytes = GLib.Bytes.new(data)
-        data_channel.send_data(glib_bytes)
+    # print(f"[DataChannel], dir: {dir(data_channel)}")
+    data_channel.send_data(data)
 
 def on_data_channel(_, data_channel):
     print("[DataChannel], created")
@@ -447,6 +445,10 @@ def prediction_listener(connection, process, lock, postprocessor):
             # print(f"[prediction_listener], post_logits_shape: {labels.shape}, post_bboxes_shape: {bboxes.shape}")
             # print(f"[prediction_listener], post_logits_dtype: {labels.dtype}, post_bboxes_dtype: {bboxes.dtype}")
             predictions_bytearray = encode_predictions(latency=latency, labels=labels, bboxes=bboxes)
+            glib_bytes = GLib.Bytes.new(predictions_bytearray)
+
+            print(f'[prediction_listener]: sending bytearrays!')
+            send_data_channel_message(glib_bytes)
 
             continue
 
@@ -462,6 +464,7 @@ def prediction_listener(connection, process, lock, postprocessor):
 async def lifespan(app: FastAPI):
     global pipeline
     global appsink
+    global data_channel
 
     #TODO: Implement rtdetr cls instead of yolo
     #TODO: Implement appsrc for sending frames to the frontend

@@ -127,6 +127,47 @@ let onWebsocketClose = () => {} //TODO: Impl Socket Close handling
 let websocketConnect = () => {} //TODO: Refactor later
 
 
+let decodePrediction = (pred) => {
+    const buffer = pred.data;
+    const dataView = new DataView(buffer);
+
+    // Read header information
+    const latency = dataView.getUint8(0);           // Read the first byte for the single uint8 value
+    const lengthLabels = dataView.getUint32(1, false); // Read next 4 bytes for tensor1 length
+    const lengthBboxes = dataView.getUint32(5, false); // Read next 4 bytes for tensor2 length
+
+    // Calculate offsets
+    const offsetLabels = 9; // Header is 9 bytes (1 + 4 + 4)
+    const offsetBboxes = offsetLabels + lengthLabels;
+
+    // Extract tensors
+    const labelsData = new Uint8Array(buffer, offsetLabels, lengthLabels);
+    const bboxesData = new Float32Array(buffer, offsetBboxes, lengthBboxes / 4); // Each float32 is 4 bytes
+
+    // Process tensors and uint8 value (example)
+    // console.log('Received latency:', latency);
+    // console.log('Received labels data:', labelsData);
+    // console.log('Received bounding boxes data:', bboxesData);
+
+    // Convert Uint8Array and Float32Array to standard arrays if needed
+    const labelsArray = Array.from(labelsData);
+    const bboxesArray = [];
+    for (let i = 0; i < bboxesData.length; i += 4) {
+        bboxesArray.push(bboxesData.slice(i, i + 4));
+    }
+
+    return { latency, labelsArray, bboxesArray }
+
+    // console.log('Labels as array:', labelsArray);
+    // console.log('Bounding boxes as array of arrays:', bboxesArray);
+};
+
+let onPredictionReceived = (pred) => {
+    let { latency, labelsArray, bboxesArray } = decodePrediction(pred);
+    console.log('[DataChannel] latency:', latency);
+}
+
+
 
 let init = async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -160,7 +201,7 @@ let init = async () => {
     };
 
     dataChannel.onmessage = (event) => {
-        console.log("Data channel message received:", event.data);
+        onPredictionReceived(event);
     };
 
     dataChannel.onclose = () => {
