@@ -96,9 +96,9 @@ module "webserver1" {
   subnet_id = module.network.public_subnet1_id
   webserver_ssh_key_path = "./keys/webserver1"
   webserver_security_group = aws_security_group.webserver_sg.id
-  ami = "ami-0e5f882be1900e43b" // ami-00efc25778562c229 - Arm64, ami-0e5f882be1900e43b - x86, ami-072573ca153715887 - DLAMI (ubuntu22.04 jammy)
+  ami = "ami-09627c82937ccdd6d" // ami-09627c82937ccdd6d - x86 (ubuntu22.04), ami-053a617c6207ecc7b - x86 (ubuntu24.04) , ami-0c2eb120564dfb242 - DLAMI (ubuntu22.04)
   instance_type = "inf1.xlarge"
-  volume_size = 30
+  volume_size = 140
 }
 
 output "webserver_ip" {
@@ -131,6 +131,7 @@ resource "ansible_playbook" "setup_gstreamer" {
 
   depends_on = [module.webserver1]
 }
+
 
 
 

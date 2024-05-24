@@ -20,6 +20,7 @@ import threading
 import asyncio
 import json
 import os
+import sys
 
 # For measuring performance
 from functools import wraps
@@ -392,11 +393,20 @@ class PostProcessor:
 def encode_predictions(latency, labels, bboxes):
     latency = np.uint8(latency)
 
+    print(f'[encode_predictions], latency: {latency.dtype.byteorder}')
+    print(f'[encode_predictions], labels: {labels.dtype.byteorder}')
+    print(f'[encode_predictions], bboxes: {bboxes.dtype.byteorder}')
+    print(f'[encode_predictions], bboxes: {sys.byteorder}')
+
+
+
     labels = labels.tobytes()
     bboxes = bboxes.tobytes()
 
-    byteslength_labels, byteslength_bboxes = len(labels), len(bboxes)
-    header = latency.tobytes() + byteslength_labels.to_bytes(4, byteorder='big') + byteslength_bboxes.to_bytes(4, byteorder='big')
+    byteslength_labels, byteslength_bboxes = np.uint32(len(labels)), np.uint32(len(bboxes))
+    # print(f'[encode_predictions]: byeslength_labels: {byteslength_labels}')
+    # print(f'[encode_predictions]: byeslength_labels: {byteslength_bboxes}')
+    header = latency.tobytes() + byteslength_labels.tobytes() + byteslength_bboxes.tobytes()
 
     return header + labels + bboxes
 
@@ -447,7 +457,7 @@ def prediction_listener(connection, process, lock, postprocessor):
             predictions_bytearray = encode_predictions(latency=latency, labels=labels, bboxes=bboxes)
             glib_bytes = GLib.Bytes.new(predictions_bytearray)
 
-            print(f'[prediction_listener]: sending bytearrays!')
+            # print(f'[prediction_listener]: sending bytearrays!')
             send_data_channel_message(glib_bytes)
 
             continue
@@ -513,6 +523,10 @@ async def lifespan(app: FastAPI):
     prediction_postprocessor.start()
 
     yield
+
+    prediction_process.join()
+    sample_puller.join()
+    prediction_postprocessor.join()
 
     #TODO: Implement properly closing all the threads and processes
     pipeline.set_state(Gst.State.NULL)
