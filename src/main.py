@@ -51,7 +51,7 @@ def timing(f):
         return result
     return wrap
 
-# Gstreamer WebRTC connection ===========================
+# Gstreamer WebRTC VIDEO ===========================
 def on_negotiation_needed(*args):
     global websocket_connection
     assert websocket_connection, "on_negotiation was called before websocket_connection was created"
@@ -83,9 +83,6 @@ def on_answer_created(promise, _, webrtcbin):
 
 
     asyncio.run(websocket_connection.send_text(reply))
-
-
-
 
 
 def on_decodebin_added(_, pad):
@@ -145,7 +142,34 @@ def on_stream_added(_, pad):
 
     print(f'----- Everything connected, stream should be flowing')
 
-# Gstreamer WebRTC connection ===========================
+# Gstreamer WebRTC VIDEO ===========================
+
+# Gstreamer WebRTC DATA ============================
+def on_data_channel_ready(channel):
+    print("[DataChannel]: ready")
+    global data_channel
+    data_channel = channel
+    # Send a message to the client once the data channel is ready
+    send_data_channel_message(b"Hello, Data Channel!")
+
+def on_data_channel_open(channel):
+    print("[DataChannel]: open")
+    channel.connect("on-data", on_data_channel_message)
+
+def on_data_channel_message(channel, data):
+    print("[DataChannel], message received:", data)
+
+def send_data_channel_message(data):
+    global data_channel
+    if data_channel:
+        data_channel.send(data)
+
+def on_data_channel(_, data_channel):
+    print("[DataChannel], created")
+    data_channel.connect("notify::ready-state", on_data_channel_open)
+    data_channel.connect("on-open", on_data_channel_ready)
+
+# Gstreamer WebRTC DATA =================================
 
 
 
@@ -164,6 +188,7 @@ appsink.set_property("sync", True)
 webrtcbin.connect('on-negotiation-needed', on_negotiation_needed)
 webrtcbin.connect('on-ice-candidate', send_ice_candidate_message)
 webrtcbin.connect('pad-added', on_stream_added)
+webrtcbin.connect('on-data-channel', on_data_channel)
 
 
 
