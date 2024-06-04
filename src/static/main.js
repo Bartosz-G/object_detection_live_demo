@@ -128,41 +128,37 @@ let websocketConnect = () => {} //TODO: Refactor later
 
 
 let decodePrediction = (pred) => {
-    const buffer = pred.data;
-    const dataView = new DataView(buffer);
+    const buffer = pred.data
+    const view = new DataView(buffer)
 
-    // Read header information
-    const latency = dataView.getUint8(0); // Read the first byte for the single uint8 value
-    const lengthLabels = dataView.getUint32(1, false); // Read next 4 bytes for tensor1 length
-    const lengthBboxes = dataView.getUint32(5, false); // Read next 4 bytes for tensor2 length
-    console.log('lengthLabels: ', lengthLabels);
-    console.log('lengthBboxes: ', lengthBboxes);
+    let offset = 0;
 
-    // Calculate offsets
-    const offsetLabels = 9; // Header is 9 bytes (1 + 4 + 4)
-    const offsetBboxes = offsetLabels + lengthLabels;
+    // Read the header values
+    const latency = view.getUint8(offset);
+    offset += 1;
 
-    console.log('offsetBboxes: ', offsetBboxes);
+    const labelsLength = view.getUint32(offset, true); // true for little-endian
+    offset += 4;
 
-    const labelsBuffer = buffer.slice(offsetLabels, offsetLabels + lengthLabels)
-    const bboxesBuffer = buffer.slice(offsetBboxes, offsetBboxes + lengthBboxes)
+    const bboxesLength  = view.getUint32(offset, true); // true for little-endian
+    offset += 4;
 
-    console.log('labelsBuffer: ', labelsBuffer);
-    console.log('bboxesBuffer: ', bboxesBuffer);
+    const labelsData = [];
+    for (let i = 0; i < labelsLength; i++) {
+        labelsData.push(view.getUint8(offset));
+        offset += 1;
+    }
 
-
-    // Extract tensors
-    const labelsData = new Uint8Array(labelsBuffer);
-    const bboxesData = new Float32Array(bboxesBuffer);
-
-    // Convert Uint8Array and Float32Array to standard arrays if needed
-    // const labelsArray = Array.from(labelsData);
-    // const bboxesArray = [];
-    // for (let i = 0; i < bboxesData.length; i += 4) {
-    //     bboxesArray.push(Array.from(bboxesData.slice(i, i + 4)));
-    // }
-
-    // return { latency, labelsArray, bboxesArray };
+    const bboxesData = [];
+    for (let i = 0; i < bboxesLength; i += 4) {
+        const innerArray = [];
+        for (let j = 0; j < 4; j++) {
+            innerArray.push(view.getFloat32(offset, true)); // true for little-endian
+            offset += 4;
+        }
+        bboxesData.push(innerArray);
+    }
+    
     return { latency, labelsData, bboxesData };
 
 };
