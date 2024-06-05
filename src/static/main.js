@@ -129,6 +129,7 @@ let websocketConnect = () => {} //TODO: Refactor later
 
 let decodePrediction = (pred) => {
     const buffer = pred.data
+    // console.log('buffer', buffer)
     const view = new DataView(buffer)
 
     let offset = 0;
@@ -136,28 +137,45 @@ let decodePrediction = (pred) => {
     // Read the header values
     const latency = view.getUint8(offset);
     offset += 1;
+    // console.log('latency: ', latency)
 
     const labelsLength = view.getUint32(offset, true); // true for little-endian
     offset += 4;
+    // console.log('latency: ', latency)
 
     const bboxesLength  = view.getUint32(offset, true); // true for little-endian
     offset += 4;
+    // console.log('bboxLength: ', bboxesLength)
 
     const labelsData = [];
     for (let i = 0; i < labelsLength; i++) {
-        labelsData.push(view.getUint8(offset));
+        labelsData.push(view.getUint8(offset, true));
         offset += 1;
     }
+    // console.log('labelsData: ', labelsData)
 
     const bboxesData = [];
-    for (let i = 0; i < bboxesLength; i += 4) {
+    for (let i = 0; i < bboxesLength / 4; i++) {
         const innerArray = [];
         for (let j = 0; j < 4; j++) {
             innerArray.push(view.getFloat32(offset, true)); // true for little-endian
             offset += 4;
+            // console.log('innerArray', innerArray)
         }
         bboxesData.push(innerArray);
     }
+
+
+    // const bboxesData = [];
+    // for (let i = 0; i < bboxesLength; i += 4) {
+    //     const innerArray = [];
+    //     for (let j = 0; j < 4; j++) {
+    //         innerArray.push(view.getFloat32(offset, true)); // true for little-endian
+    //         console.log('innerArray:', innerArray)
+    //         offset += 4;
+    //     }
+    //     bboxesData.push(innerArray);
+    // }
     
     return { latency, labelsData, bboxesData };
 

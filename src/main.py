@@ -344,10 +344,13 @@ def model_process(model_path, receive_conn, post_conn, receive_lock, send_lock):
             if msg['state'] == 'cls':
                 with receive_lock:
                     received_array = np.ndarray(shape, dtype=dtype, buffer=receive_shared_memory.buf)
-
+                # post_conn.send({'state': 'log', 'log': {'received_array': received_array[:4, :4]}})
                 frame = torch.from_numpy(received_array).float().unsqueeze(0)
 
+
                 ts = perf_counter()
+                # post_conn.send({'state': 'log', 'log': {'frame ': frame[:4, :4]}})
+                # post_conn.send({'state': 'log', 'log': {'frame_shape ': frame.shape}})
                 output = model(frame)
                 te = perf_counter()
                 elapsed_time = (te - ts) * 1000
@@ -355,6 +358,8 @@ def model_process(model_path, receive_conn, post_conn, receive_lock, send_lock):
 
                 # Unpacking bboxes and labels
                 logits, bbox_pred = output[0].numpy(), output[1].numpy()
+                # post_conn.send({'state': 'log', 'log':{'logits': logits[:4], 'bboxes': bbox_pred[:4]}})
+                # ============= Still correct =======================
 
                 with send_lock:
                     shared_logits = np.ndarray(logits_shape, dtype=logits_dtype, buffer=send_logits_shared_memory.buf)
@@ -379,25 +384,29 @@ class PostProcessor:
 
     def __call__(self, logits, bbox_pred, *args, **kwargs):
         with self.lock:
+            # print(f'[PostProcessor] step 1: {bbox_pred[:4]}')
             logits, bbox_pred = torch.from_numpy(logits), torch.from_numpy(bbox_pred)
             scores = torch.sigmoid(logits)
             scores, index = torch.topk(scores.flatten(1), self.topk, axis=-1)
             labels = index % 80
             index = index // 80
+            # print(f'[PostProcessor] step 2: {bbox_pred[:4]}')
             bboxes = bbox_pred.gather(dim=1, index=index.unsqueeze(-1).repeat(1, 1, bbox_pred.shape[-1])).squeeze(0).numpy().astype(np.float32)
             labels = labels.flatten().numpy().astype(np.uint8)
-
+            # print(f'[PostProcessor] step 3: {bbox_pred[:4]}')
             return labels, bboxes
 
 
 def encode_predictions(latency, labels, bboxes):
     latency = np.uint8(latency)
 
-    print(f'[encode_predictions], latency: {latency.dtype.byteorder}')
-    print(f'[encode_predictions], labels: {labels.dtype.byteorder}')
-    print(f'[encode_predictions], bboxes: {bboxes.dtype.byteorder}')
-    print(f'[encode_predictions], bboxes: {sys.byteorder}')
+    # print(f'[encode_predictions], latency: {latency.dtype.byteorder}')
+    # print(f'[encode_predictions], labels: {labels.dtype.byteorder}')
+    # print(f'[encode_predictions], bboxes: {bboxes.dtype.byteorder}')
+    # print(f'[encode_predictions], bboxes: {sys.byteorder}')
 
+
+    # print(f'[encode_predictions]: {bboxes[:4]}')
 
 
     labels = labels.tobytes()
@@ -431,7 +440,7 @@ def prediction_listener(connection, process, lock, postprocessor):
             logits_shm_name, logits_nbytes, logits_dtype, logits_shape = (
                 init_logits['shared_memory_name'], init_logits['nbytes'], init_logits['dtype'], init_logits['shape'])
             bboxes_shm_name, bboxes_nbytes, bboxes_dtype, bboxes_shape = (
-                init_logits['shared_memory_name'], init_bboxes['nbytes'], init_bboxes['dtype'], init_bboxes['shape'])
+                init_bboxes['shared_memory_name'], init_bboxes['nbytes'], init_bboxes['dtype'], init_bboxes['shape'])
 
             logits_shared_memory = multiprocessing.shared_memory.SharedMemory(name=logits_shm_name)
             bboxes_shared_memory = multiprocessing.shared_memory.SharedMemory(name=bboxes_shm_name)
@@ -451,6 +460,8 @@ def prediction_listener(connection, process, lock, postprocessor):
             with lock:
                 logits = np.ndarray(logits_shape, dtype=logits_dtype, buffer=logits_shared_memory.buf)
                 bboxes = np.ndarray(bboxes_shape, dtype=bboxes_dtype, buffer=bboxes_shared_memory.buf)
+
+            # print(f'[prediction_listener] bboxes: {bboxes[:4]}')
             labels, bboxes = postprocessor(logits, bboxes)
             # print(f"[prediction_listener], post_logits_shape: {labels.shape}, post_bboxes_shape: {bboxes.shape}")
             # print(f"[prediction_listener], post_logits_dtype: {labels.dtype}, post_bboxes_dtype: {bboxes.dtype}")
