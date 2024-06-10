@@ -13,12 +13,13 @@ let peerConnection;
 
 const displayDimensions = {
     width: { ideal: 1280 },
-    height: { ideal: 720 }}
+    height: { ideal: 720 }
+}
 
 const classifyDimensions =  {
     width: { exact: 640 },
     height: { exact: 640 }
-  }
+}
 
 let websocket;
 var client_id = Date.now();
