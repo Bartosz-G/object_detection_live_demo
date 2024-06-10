@@ -34,7 +34,7 @@ FORMAT = 'RGB'
 MODEL_PATH = 'rtdetr480_neuron.pt'
 SERVER_CORE_AFFINITY = None
 MODEL_CORE_AFFINITY = None
-TOPK = 100
+TOPK = 20
 
 
 Gst.init(None)
@@ -197,7 +197,6 @@ pipeline = Gst.Pipeline.new("pipeline")
 pipeline.add(webrtcbin)
 
 
-#TODO: Implement a data channel for sending back predictions
 
 
 
@@ -475,10 +474,6 @@ def prediction_listener(connection, process, lock, postprocessor):
 
 
 
-        #TODO: Implement time logging for testing
-        #TODO: Implement postprocessing of frames
-        #TODO: Implement pipe from main to pipe_listener to configure the postprocessor
-        #TODO: Implement sending the frames back to the WebRTC datachannels
 
 
 @asynccontextmanager
@@ -487,8 +482,6 @@ async def lifespan(app: FastAPI):
     global appsink
     global data_channel
 
-    #TODO: Implement rtdetr cls instead of yolo
-    #TODO: Implement appsrc for sending frames to the frontend
 
 
     # if SERVER_CORE_AFFINITY:
@@ -545,6 +538,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+# templates = Jinja2Templates(directory="templates")
+# app.mount("/static", StaticFiles(directory="static"), name="static")
+
 templates = Jinja2Templates(directory="/home/ubuntu/src/templates")
 app.mount("/static", StaticFiles(directory="/home/ubuntu/src/static"), name="static")
 
