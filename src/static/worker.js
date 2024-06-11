@@ -202,24 +202,26 @@ let drawBbox = () => {
     ctx.fillStyle = 'red';
     let offsetClassText = fontSize * 0.1
 
+    const canvasWidth = offscreenCanvas.width;
+    const canvasHeight = offscreenCanvas.height;
     const centerX = offscreenCanvas.width / 2;
     const centerY = offscreenCanvas.height / 2;
 
 
     boundingBoxes.forEach((coords, index) => {
         // console.log('bbox.forEach() called!')
+        const [x, y, w, h] =  coords
         if (lineWidth != 0) {
-            //TODO: Fix xyhw to xyxy coords
-            ctx.strokeRect(centerX * coords[0], centerY * coords[1], offscreenCanvas.width * coords[2], offscreenCanvas.height * coords[3]);
+            ctx.strokeRect(x * canvasWidth, y * canvasHeight, w * canvasWidth, h * canvasHeight);
         }
 
         const classes = classMapping[labels[index]];
 
         if (fontSlider != 0) {
-            ctx.fillText(classes, centerX * coords[0], centerY * coords[1] - offsetClassText);
+            ctx.fillText(classes, x, y - offsetClassText);
         }
     });
     const latencyText = `${latency}ms`
     const latencyTextSize = ctx.measureText(latencyText);
-    ctx.fillText(latencyText, offscreenCanvas.width - latencyTextSize.width, latencyTextSize.actualBoundingBoxAscent + latencyTextSize.actualBoundingBoxDescent);
+    ctx.fillText(latencyText, canvasWidth - latencyTextSize.width, latencyTextSize.actualBoundingBoxAscent + latencyTextSize.actualBoundingBoxDescent);
 }

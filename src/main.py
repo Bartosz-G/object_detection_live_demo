@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from multiprocessing import shared_memory
 import torch
 import torch_neuron
+from torchvision.ops import box_convert
 import numpy as np
 import multiprocessing
 import threading
@@ -264,6 +265,7 @@ def pull_samples(appsink, connection, lock, process):
                 buffer=map_info.data) / 255
 
             frame = np.transpose(frame, (2, 0, 1))
+            print(f'[pull_samples] sending input: {frame[0, 0, :10]}')
             with lock:
                 shared_array = np.ndarray(frame_shape, dtype=frame_dtype, buffer=memory.buf)
                 np.copyto(shared_array, frame)
@@ -343,6 +345,7 @@ def model_process(model_path, receive_conn, post_conn, receive_lock, send_lock):
             if msg['state'] == 'cls':
                 with receive_lock:
                     received_array = np.ndarray(shape, dtype=dtype, buffer=receive_shared_memory.buf)
+                    # print(f'[model_process] taken input: {received_array[0, 0, :10]}')
                 # post_conn.send({'state': 'log', 'log': {'received_array': received_array[:4, :4]}})
                 frame = torch.from_numpy(received_array).float().unsqueeze(0)
 
@@ -384,7 +387,12 @@ class PostProcessor:
     def __call__(self, logits, bbox_pred, *args, **kwargs):
         with self.lock:
             # print(f'[PostProcessor] step 1: {bbox_pred[:4]}')
-            logits, bbox_pred = torch.from_numpy(logits), torch.from_numpy(bbox_pred)
+            logits, boxes = torch.from_numpy(logits), torch.from_numpy(bbox_pred)
+
+            # print(f'[postprocessor] before conversion: {boxes[0, 0, :]}')
+            bbox_pred = box_convert(boxes, in_fmt='cxcywh', out_fmt='xywh')
+            print(f'[postprocessor] after conversion: {bbox_pred[0, 0, :]}')
+
             scores = torch.sigmoid(logits)
             scores, index = torch.topk(scores.flatten(1), self.topk, axis=-1)
             labels = index % 80
