@@ -204,8 +204,8 @@ let drawBbox = () => {
 
     const canvasWidth = offscreenCanvas.width;
     const canvasHeight = offscreenCanvas.height;
-    const centerX = offscreenCanvas.width / 2;
-    const centerY = offscreenCanvas.height / 2;
+    // const centerX = offscreenCanvas.width / 2;
+    // const centerY = offscreenCanvas.height / 2;
 
 
     boundingBoxes.forEach((coords, index) => {
@@ -218,7 +218,7 @@ let drawBbox = () => {
         const classes = classMapping[labels[index]];
 
         if (fontSlider != 0) {
-            ctx.fillText(classes, x, y - offsetClassText);
+            ctx.fillText(classes, x * canvasWidth, y * canvasHeight - offsetClassText);
         }
     });
     const latencyText = `${latency}ms`

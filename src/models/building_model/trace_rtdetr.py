@@ -4,8 +4,10 @@ import torch
 import time
 import torch.nn as nn
 import torch_neuron
+from torchvision import transforms
 import json
 from typing import NamedTuple
+from PIL import Image
 
 
 
@@ -23,18 +25,18 @@ from typing import NamedTuple
 #
 #
 # # Model Tracing: ==========================
-from src.core import YAMLConfig
+# from src.core import YAMLConfig
 from src.solver import TASKS
 from src.core.yaml_utils import load_config
 #
-config_name = 'rtdetr_r18vd_6x_coco.yml'
-config_path = os.path.join('configs', 'rtdetr', config_name)
+# config_name = 'rtdetr_r18vd_6x_coco.yml'
+# config_path = os.path.join('configs', 'rtdetr', config_name)
 # loaded_weights = torch.load("rtdetr_r18vd_5x_coco_objects365_from_paddle.pth")['ema']['module']
-# #
-# #
-cfg = YAMLConfig(
-    config_path
-)
+#
+#
+# cfg = YAMLConfig(
+#     config_path
+# )
 #
 # rtdetr = cfg.model
 # rtdetr.load_state_dict(loaded_weights)
@@ -70,16 +72,39 @@ neuron_model_path = 'rtdetr480_neuron_test.pt'
 # os.environ['NEURON_RT_NUM_CORES'] = '4'
 
 os.environ['NEURON_RT_LOG_LEVEL'] = 'WARN'
-rtdetr = torch.jit.load(neuron_model_path)
-img = torch.rand(1, 3, 480, 480)
+rtdetr = torch.jit.load(os.path.join('../', 'rtdetr480_neuron.pt'))
+
+img = Image.open('photo.jpg').convert("RGB")
+width, height = img.size
+transform = transforms.Compose([
+    transforms.Resize((480, 480)),
+    transforms.ToTensor()
+])
+
+img = transform(img).unsqueeze(0)
+
+# img = torch.rand(1, 3, 480, 480)
 # Warm-up
 output = rtdetr(img)
 
-start_time = time.perf_counter()
-output = rtdetr(img)
-delta = time.perf_counter() - start_time
-inference_time_ms = delta * 1000
-print(f'inference time: {inference_time_ms:.3f} ms')
+logits, bbox_pred = output[0], output[1]
+
+scores = torch.sigmoid(logits)
+scores, index = torch.topk(scores.flatten(1), 10, axis=-1)
+labels = index % 80
+index = index // 80
+# print(f'[PostProcessor] step 2: {bbox_pred[:4]}')
+bboxes = bbox_pred.gather(dim=1, index=index.unsqueeze(-1).repeat(1, 1, bbox_pred.shape[-1])).squeeze(0)
+labels = labels.flatten()
+print(f'[bboxes]: \n {bboxes}')
+print(f'[labels]: \n {labels}')
+
+
+# start_time = time.perf_counter()
+# output = rtdetr(img)
+# delta = time.perf_counter() - start_time
+# inference_time_ms = delta * 1000
+# print(f'inference time: {inference_time_ms:.3f} ms')
 # print(output)
 #
 # TOP_PREDICTIONS = 100

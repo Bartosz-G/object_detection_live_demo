@@ -35,7 +35,7 @@ FORMAT = 'RGB'
 MODEL_PATH = 'rtdetr480_neuron.pt'
 SERVER_CORE_AFFINITY = None
 MODEL_CORE_AFFINITY = None
-TOPK = 20
+TOPK = 10
 
 
 Gst.init(None)
@@ -88,7 +88,7 @@ def on_answer_created(promise, _, webrtcbin):
 
 
 def on_decodebin_added(_, pad):
-    print(f'ON_DECODEBIN_ADDED CALLED')
+    print(f'[on_decodebin_added]: CALLED')
     global pipeline
     global appsink
 
@@ -97,7 +97,7 @@ def on_decodebin_added(_, pad):
         return
 
     caps = pad.get_current_caps()
-    print(f'INCOMING STREAM CAPABILITIES: {caps.to_string()}')
+    print(f'[on_decodebin_added]: INCOMING STREAM CAPABILITIES: {caps.to_string()}')
     name = caps.to_string()
 
 
@@ -151,8 +151,7 @@ def on_data_channel_ready(channel):
     print("[DataChannel]: ready")
     global data_channel
     data_channel = channel
-    # Send a message to the client once the data channel is ready
-    send_data_channel_message(b"Hello, Data Channel!")
+    # send_data_channel_message(b"Hello, Data Channel!")
 
 def on_data_channel_open(channel):
     print("[DataChannel]: open")
@@ -214,9 +213,10 @@ def pull_samples(appsink, connection, lock, process):
                 continue
 
             caps = sample.get_caps()
+            print(f'[pull_samples] APPSINK CAPABILITIES: {caps.to_string()}')
 
-            assert HEIGHT == caps.get_structure(0).get_value("height"), f'appsink receive height: {caps.get_structure(0).get_value("height")}, expected: {HEIGHT}'
-            assert WIDTH == caps.get_structure(0).get_value("width"), f'appsink receive width: {caps.get_structure(0).get_value("width")}, expected: {WIDTH}'
+            assert HEIGHT == caps.get_structure(0).get_value("height"), f'[pull_samples] appsink receive height: {caps.get_structure(0).get_value("height")}, expected: {HEIGHT}'
+            assert WIDTH == caps.get_structure(0).get_value("width"), f'[pull_samples] appsink receive width: {caps.get_structure(0).get_value("width")}, expected: {WIDTH}'
 
             buffer = sample.get_buffer()
             success, map_info = buffer.map(Gst.MapFlags.READ)
@@ -224,14 +224,18 @@ def pull_samples(appsink, connection, lock, process):
             if not success:
                 raise RuntimeError("Could not map buffer data!")
 
-            warmup_frame = np.ndarray(
-                shape=(HEIGHT, WIDTH, 3),
-                dtype=np.uint8,
-                buffer=map_info.data) / 255
+            warmup_frame = np.frombuffer(map_info.data, dtype=np.uint8).reshape((HEIGHT, WIDTH, 3)) / 255
+
+            # warmup_frame = np.ndarray(
+            #     shape=(HEIGHT, WIDTH, 3),
+            #     dtype=np.uint8,
+            #     buffer=map_info.data) / 255
 
             warmup_frame = np.transpose(warmup_frame, (2, 0, 1))
+            buffer.unmap(map_info)
 
             frame_nbytes, frame_dtype, frame_shape = warmup_frame.nbytes, warmup_frame.dtype, warmup_frame.shape
+
 
             memory = shared_memory.SharedMemory(create=True, size=frame_nbytes)
 
@@ -259,10 +263,13 @@ def pull_samples(appsink, connection, lock, process):
             buffer = sample.get_buffer()
             _, map_info = buffer.map(Gst.MapFlags.READ)
 
-            frame = np.ndarray(
-                shape=(HEIGHT, WIDTH, 3),
-                dtype=np.uint8,
-                buffer=map_info.data) / 255
+            frame = np.frombuffer(map_info.data, dtype=np.uint8).reshape((HEIGHT, WIDTH, 3)) / 255
+            buffer.unmap(map_info)
+
+            # frame = np.ndarray(
+            #     shape=(HEIGHT, WIDTH, 3),
+            #     dtype=np.uint8,
+            #     buffer=map_info.data) / 255
 
             frame = np.transpose(frame, (2, 0, 1))
             print(f'[pull_samples] sending input: {frame[0, 0, :10]}')
@@ -348,6 +355,7 @@ def model_process(model_path, receive_conn, post_conn, receive_lock, send_lock):
                     # print(f'[model_process] taken input: {received_array[0, 0, :10]}')
                 # post_conn.send({'state': 'log', 'log': {'received_array': received_array[:4, :4]}})
                 frame = torch.from_numpy(received_array).float().unsqueeze(0)
+                print(f'[model_process] received input: {frame[0, 0, 0, :10]}')
 
 
                 ts = perf_counter()
@@ -391,7 +399,8 @@ class PostProcessor:
 
             # print(f'[postprocessor] before conversion: {boxes[0, 0, :]}')
             bbox_pred = box_convert(boxes, in_fmt='cxcywh', out_fmt='xywh')
-            print(f'[postprocessor] after conversion: {bbox_pred[0, 0, :]}')
+            print(f'[postprocessor] after conversion: {bbox_pred[0, :5, :]}')
+            bbox_pred = torch.clamp(bbox_pred, min=0, max=1)
 
             scores = torch.sigmoid(logits)
             scores, index = torch.topk(scores.flatten(1), self.topk, axis=-1)
