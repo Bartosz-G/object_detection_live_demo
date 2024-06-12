@@ -27,6 +27,8 @@ import sys
 from functools import wraps
 from time import perf_counter, sleep
 
+from services.webrtcclient import WebRTCClient
+
 
 
 HEIGHT = 480
@@ -53,160 +55,17 @@ def timing(f):
         return result
     return wrap
 
-# Gstreamer WebRTC VIDEO ===========================
-def on_negotiation_needed(*args):
-    global websocket_connection
-    assert websocket_connection, "on_negotiation was called before websocket_connection was created"
-    print("ON_NEGOTIATION_NEEDED was called: ", args)
-    _ = asyncio.run(websocket_connection.send_text('waitingForOffer'))
-
-def send_ice_candidate_message(_, mlineindex, candidate):
-    print(f'INITIATING SENDING OF ICE CANDIDATE \n')
-    global websocket_connection
-    assert websocket_connection, f"send_ice_candidate_message was called before websocket_connection was created! \n candidate: {candidate} \n mlineindex: {mlineindex}"
-    icemsg = json.dumps({'ice': {'candidate': candidate, 'sdpMLineIndex': mlineindex}})
-
-    print(f'ICE candidate being sent: {icemsg}')
-    asyncio.run(websocket_connection.send_text(icemsg))
-
-
-def on_answer_created(promise, _, webrtcbin):
-    global websocket_connection
-    print(f'On answer creation initiated... \n')
-    promise.wait()
-    msg = promise.get_reply()
-    answer = msg.get_value('answer')
-    print(f'ANSWER: \n {answer.sdp.as_text()}')
-    webrtcbin.emit('set-local-description', answer, promise)
-    promise.interrupt()
-    print(f'ON ANSWER CREATION COMPLETE \n')
-
-    reply = json.dumps({'sdp': {'type':'answer', 'sdp': answer.sdp.as_text()}})
-
-
-    asyncio.run(websocket_connection.send_text(reply))
-
-
-def on_decodebin_added(_, pad):
-    print(f'[on_decodebin_added]: CALLED')
-    global pipeline
-    global appsink
-
-    if not pad.has_current_caps():
-        print(pad, 'has no caps, ignoring')
-        return
-
-    caps = pad.get_current_caps()
-    print(f'[on_decodebin_added]: INCOMING STREAM CAPABILITIES: {caps.to_string()}')
-    name = caps.to_string()
-
-
-    q = Gst.ElementFactory.make('queue')
-    scale = Gst.ElementFactory.make('videoscale')
-    conv = Gst.ElementFactory.make('videoconvert')
-    capsfilter = Gst.ElementFactory.make('capsfilter')
-
-
-    enforce_caps = Gst.Caps.from_string(f"video/x-raw,format={FORMAT},width={WIDTH},height={HEIGHT}")
-    capsfilter.set_property('caps', enforce_caps)
-
-
-    pipeline.add(q)
-    pipeline.add(scale)
-    pipeline.add(conv)
-    pipeline.add(capsfilter)
-    pipeline.add(appsink)
-    pipeline.sync_children_states()
-    pad.link(q.get_static_pad('sink'))
-    q.link(scale)
-    scale.link(conv)
-    conv.link(capsfilter)
-    capsfilter.link(appsink)
-
-    pipeline.set_state(Gst.State.PLAYING)
-
-
-
-
-def on_stream_added(_, pad):
-    print(f'------ ON STREAM ADDED EVENT HAS BEEN CALLED ---------')
-    print(f'------ STREAM IS NOW FLOWING  ---------')
-
-
-    global pipeline
-    global webrtcbin
-
-    decodebin = Gst.ElementFactory.make('decodebin')
-    decodebin.connect('pad-added', on_decodebin_added)
-    pipeline.add(decodebin)
-    decodebin.sync_state_with_parent()
-    webrtcbin.link(decodebin)
-
-    print(f'----- Everything connected, stream should be flowing')
-
-# Gstreamer WebRTC VIDEO ===========================
-
-# Gstreamer WebRTC DATA ============================
-def on_data_channel_ready(channel):
-    print("[DataChannel]: ready")
-    global data_channel
-    data_channel = channel
-    # send_data_channel_message(b"Hello, Data Channel!")
-
-def on_data_channel_open(channel):
-    print("[DataChannel]: open")
-    channel.connect("on-data", on_data_channel_message)
-
-def on_data_channel_message(channel, data):
-    print("[DataChannel], message received:", data)
-
-def send_data_channel_message(data):
-    global data_channel
-    # print(f"[DataChannel], dir: {dir(data_channel)}")
-    data_channel.send_data(data)
-
-def on_data_channel(_, data_channel):
-    print("[DataChannel], created")
-    data_channel.connect("notify::ready-state", on_data_channel_open)
-    data_channel.connect("on-open", on_data_channel_ready)
-
-# Gstreamer WebRTC DATA =================================
-
-
-
-
-webrtcbin = Gst.ElementFactory.make("webrtcbin", "webrtcbin")
-appsink = Gst.ElementFactory.make("appsink", "appsink")
-
-webrtcbin.set_property("stun-server", "stun://stun.kinesisvideo.eu-west-2.amazonaws.com:443")
-
-appsink.set_property("emit-signals", True)
-appsink.set_property("drop", True)
-appsink.set_property("max-buffers", 1)
-appsink.set_property("sync", True)
-
-
-webrtcbin.connect('on-negotiation-needed', on_negotiation_needed)
-webrtcbin.connect('on-ice-candidate', send_ice_candidate_message)
-webrtcbin.connect('pad-added', on_stream_added)
-webrtcbin.connect('on-data-channel', on_data_channel)
-
-
-
-pipeline = Gst.Pipeline.new("pipeline")
-pipeline.add(webrtcbin)
-
-
 
 
 
 def pull_samples(appsink, connection, lock, process):
-    global pipeline
+    # global pipeline
     print('--- pipe_samples initiated ---')
+
 
     try:
         while True:
-            sample = appsink.emit("pull-sample")
+            sample = appsink.emit("pull-sample") # Dereferencing a pointer
             if sample is None:
                 sleep(1)
                 print(f'No samples in the appsink')
@@ -255,7 +114,7 @@ def pull_samples(appsink, connection, lock, process):
             break
 
         while process.is_alive():
-            sample = appsink.emit("pull-sample")
+            sample = appsink.emit("pull-sample") # Dereferencing a pointer
             if sample is None:
                 continue
 
@@ -439,7 +298,7 @@ def encode_predictions(latency, labels, bboxes):
 
 
 #TODO: Impement configurable post_processor
-def prediction_listener(connection, process, lock, postprocessor):
+def prediction_listener(connection, process, lock, postprocessor, webrtc):
     print('--- pipe_listener initiated ---')
 
     while process.is_alive():
@@ -485,7 +344,7 @@ def prediction_listener(connection, process, lock, postprocessor):
             glib_bytes = GLib.Bytes.new(predictions_bytearray)
 
             # print(f'[prediction_listener]: sending bytearrays!')
-            send_data_channel_message(glib_bytes)
+            webrtc.send_data_channel_message(glib_bytes)
 
             continue
 
@@ -495,9 +354,9 @@ def prediction_listener(connection, process, lock, postprocessor):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global pipeline
-    global appsink
-    global data_channel
+    global webrtc
+    webrtc = WebRTCClient(1, 1, {})
+    appsink = webrtc.get_appsink()
 
 
 
@@ -539,7 +398,8 @@ async def lifespan(app: FastAPI):
                                                 kwargs={'connection':from_model,
                                                         'process': prediction_process,
                                                         'lock': prediction_listener_lock,
-                                                        'postprocessor': post_processor},
+                                                        'postprocessor': post_processor,
+                                                        'webrtc': webrtc},
                                                 daemon=True)
     prediction_postprocessor.start()
 
@@ -550,7 +410,7 @@ async def lifespan(app: FastAPI):
     prediction_postprocessor.join()
 
     #TODO: Implement properly closing all the threads and processes
-    pipeline.set_state(Gst.State.NULL)
+    webrtc.pipeline.set_state(Gst.State.NULL)
 
 
 
@@ -568,9 +428,12 @@ async def get(request: Request):
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket):
     global appsink
-    global websocket_connection
+    global webrtc
     await websocket.accept()
     websocket_connection = websocket
+    webrtc.set_websocket(websocket_connection)
+
+    webrtcbin = webrtc.get_webrtcbin()
 
     # asyncio.create_task(run_in_background(pull_samples(appsink=appsink)))
 
@@ -580,35 +443,13 @@ async def websocket_endpoint(websocket: WebSocket):
 
         if data == 'PING':
             print(f'Received a message: {data}')
-            pipeline.set_state(Gst.State.PLAYING)
+            webrtc.pipeline.set_state(Gst.State.PLAYING)
 
 
             continue
 
         msg = json.loads(data)
-
-        if 'offer' in msg:
-            sdp = msg['offer']['sdp']
-            print(f'Received an offer: \n {sdp}')
-            res, sdpmsg = GstSdp.SDPMessage.new()
-            GstSdp.sdp_message_parse_buffer(bytes(sdp.encode()), sdpmsg)
-            offer = GstWebRTC.WebRTCSessionDescription.new(GstWebRTC.WebRTCSDPType.OFFER, sdpmsg)
-            promise = Gst.Promise.new()
-            webrtcbin.emit('set-remote-description', offer, promise)
-            promise.interrupt()
-
-            print('Creating an answer ... \n')
-            promise = Gst.Promise.new_with_change_func(on_answer_created, None, webrtcbin)
-            webrtcbin.emit('create-answer', None, promise)
-
-
-
-        elif 'ice' in msg:
-            ice = msg['ice']
-            print(f'Received an ICE candidate: {ice}')
-            candidate = ice['candidate']
-            sdpmlineindex = ice['sdpMLineIndex']
-            webrtcbin.emit('add-ice-candidate', sdpmlineindex, candidate)
+        webrtc.receive_message(msg)
 
 
 
