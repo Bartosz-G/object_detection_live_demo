@@ -129,26 +129,27 @@ class WebRTCClient:
 
         print(f'----- Everything connected, stream should be flowing')
 
+#TODO: Fix the Datachannel
     def on_data_channel_ready(self, channel):
         print("[DataChannel]: ready")
-        self.data_channel = channel
+        self.datachannel = channel
         # send_data_channel_message(b"Hello, Data Channel!")
 
-    def on_data_channel_open(self, channel):
-        print("[DataChannel]: open")
-        channel.connect("on-data", self.on_data_channel_message)
-
-    def on_data_channel_message(self, data):
-        print("[DataChannel], message received:", data)
+    # def on_data_channel_open(self, *args, **kwargs):
+    #     print("[DataChannel]: open")
+    #     self.datachannel.connect("on-data", self.on_data_channel_message)
+    #
+    # def on_data_channel_message(self, data):
+    #     print("[DataChannel], message received:", data)
 
     def send_data_channel_message(self, data):
-        assert self.data_channel, f'[send_data_channel_message]: called but self.data_channels is {self.data_channel}'
+        assert self.datachannel, f'[send_data_channel_message]: called but self.data_channels is {self.datachannel}'
         # print(f"[DataChannel], dir: {dir(data_channel)}")
-        self.data_channel.send_data(data)
+        self.datachannel.send_data(data)
 
     def on_data_channel(self, _, data_channel):
         print("[DataChannel], created")
-        data_channel.connect("notify::ready-state", self.on_data_channel_open)
+        # data_channel.connect("notify::ready-state", self.on_data_channel_open)
         data_channel.connect("on-open", self.on_data_channel_ready)
 
 
