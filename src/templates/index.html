@@ -18,8 +18,8 @@
             <div id="controls">
                 <div class="control-group">
                     <label for="topClasses">Top Classes:</label>
-                    <input type="range" id="topClasses" name="topClasses" min="5" max="300" value="100" step="1">
-                    <input type="number" id="topClassesValue" min="5" max="300" value="100">
+                    <input type="range" id="topClasses" name="topClasses" min="1" max="100" value="{{ topk }}" step="1">
+                    <input type="number" id="topClassesValue" min="5" max="300" value="{{ topk }}">
                 </div>
 
                 <div class="control-group">
@@ -47,6 +47,18 @@
             </div>
         </div>
 </body>
+<script>
+    const stunServers = [
+        {
+            urls: ["{{ stun }}"]
+        }
+    ];
 
+    const classifyDimensions =  {
+        width: {{ classifywidth }},
+        height: {{ classifyheight }},
+        frameRate: {{ classifyframerate }}
+    }
+</script>
 <script src="/static/main.js"></script>
 </html>

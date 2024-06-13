@@ -1,11 +1,11 @@
 // WebRTC variables
-const stunServers = [
-    {
-        urls: ['stun:stun.kinesisvideo.eu-west-2.amazonaws.com:443', 'stun.l.google.com']
-    }
-];
+// const stunServers = [
+//     {
+//         urls: ['stun:stun.kinesisvideo.eu-west-2.amazonaws.com:443', 'stun.l.google.com']
+//     }
+// ];
 
-const ip = '13.42.36.213';
+// const ip = '13.42.36.213';
 
 let localStream;
 let peerConnection;
@@ -18,17 +18,13 @@ const displayDimensions = {
     height: { ideal: 720 }
 }
 
-const classifyDimensions =  {
-    width: { exact: 640 },
-    height: { exact: 640 }
-}
+
 
 let websocket;
 var client_id = Date.now();
 let websocket_url = 'ws://' + window.location.hostname + `:80/ws/${client_id}`;
 
 
-// Displaying variables
 
 
 // Control flow variables
@@ -255,60 +251,6 @@ let onWebsocketClose = () => {} //TODO: Impl Socket Close handling
 let websocketConnect = () => {} //TODO: Refactor later
 
 
-// let decodePrediction = (pred) => {
-//     const buffer = pred.data
-//     // console.log('buffer', buffer)
-//     const view = new DataView(buffer)
-//
-//     let offset = 0;
-//
-//     // Read the header values
-//     const latency = view.getUint8(offset);
-//     offset += 1;
-//     // console.log('latency: ', latency)
-//
-//     const labelsLength = view.getUint32(offset, true); // true for little-endian
-//     offset += 4;
-//     // console.log('latency: ', latency)
-//
-//     const bboxesLength  = view.getUint32(offset, true); // true for little-endian
-//     offset += 4;
-//     // console.log('bboxLength: ', bboxesLength)
-//
-//     const labelsData = [];
-//     for (let i = 0; i < labelsLength; i++) {
-//         labelsData.push(view.getUint8(offset, true));
-//         offset += 1;
-//     }
-//     // console.log('labelsData: ', labelsData)
-//
-//     const bboxesData = [];
-//     for (let i = 0; i < bboxesLength / 4; i++) {
-//         const innerArray = [];
-//         for (let j = 0; j < 4; j++) {
-//             innerArray.push(view.getFloat32(offset, true)); // true for little-endian
-//             offset += 4;
-//             // console.log('innerArray', innerArray)
-//         }
-//         bboxesData.push(innerArray);
-//     }
-//
-//
-//     // const bboxesData = [];
-//     // for (let i = 0; i < bboxesLength; i += 4) {
-//     //     const innerArray = [];
-//     //     for (let j = 0; j < 4; j++) {
-//     //         innerArray.push(view.getFloat32(offset, true)); // true for little-endian
-//     //         console.log('innerArray:', innerArray)
-//     //         offset += 4;
-//     //     }
-//     //     bboxesData.push(innerArray);
-//     // }
-//
-//     return { latency, labelsData, bboxesData };
-//
-// };
-
 let onPredictionReceived = (pred) => {
     const buff = pred.data;
     worker.postMessage({ type: 'decodePrediction', buffer: buff});
@@ -403,10 +345,6 @@ let init = async () => {
     }
 
 };
-
-
-
-
 
 
 

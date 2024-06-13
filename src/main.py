@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, HTTPException, WebSocket
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import HTMLResponse
 
 import gi
 gi.require_version('Gst', '1.0')
@@ -36,7 +37,7 @@ class PredictionTask:
         self.config = config
         self.height = config.get('height', 480)
         self.width = config.get('width', 480)
-        self.model = torch.jit.load(os.path.join('models', config.get('model_path', 'rtdetr480_neuron.pt')))
+        self.model = torch.jit.load(config.get('model_path', 'models/rtdetr480_neuron.pt'))
 
     def __call__(self, appsink, queue, *args, **kwargs):
         self.logger.info(f'[PredictionTask]: initiated')
@@ -144,9 +145,13 @@ class PredictionSender:
 
                 if torch.isnan(logits).any().item():
                     self.logger.warning(f'[PredictionSender]: received NaN logits')
+                    self.logger.debug(
+                        f'[PredictionSender]: {torch.isnan(logits).sum().item() / logits.numel() * 100}% of logits are NaN')
 
                 if torch.isnan(bbox_pred).any().item():
                     self.logger.warning(f'[PredictionSender]: received NaN bounding boxes')
+                    self.logger.debug(
+                        f'[PredictionSender]: {torch.isnan(bbox_pred).sum().item() / bbox_pred.numel() * 100}% of bboxes are NaN')
 
                 labels, bboxes = self.postprocessor(logits, bbox_pred)
 
@@ -232,7 +237,7 @@ async def lifespan(app: FastAPI):
     Gst.init(None)
 
     webrtc = WebRTCClient(1, 1, {}, logger=logger)
-    prediction_task = PredictionTask(config={}, logger=logging)
+    prediction_task = PredictionTask(config={}, logger=logger)
 
 
     yield
@@ -253,9 +258,17 @@ app.mount("/static", StaticFiles(directory="/home/ubuntu/src/static"), name="sta
 
 
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 async def get(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    context = {
+        'request': request,
+        'stun': CONFIG.get('stun', 'stun://stun.kinesisvideo.eu-west-2.amazonaws.com:443'),
+        'topk': CONFIG.get('topk', 10),
+        'classifywidth': '{'+f' exact: {CONFIG.get("width", 480)}'+'} ',
+        'classifyheight': '{' + f' exact: {CONFIG.get("height", 480)} ' + '}',
+        'classifyframerate': '{' + f' exact: {CONFIG.get("frameRate", 20)} ' + '}'
+    }
+    return templates.TemplateResponse("index.html", context)
 
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket):
