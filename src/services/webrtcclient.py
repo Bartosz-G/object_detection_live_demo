@@ -11,8 +11,7 @@ import json
 
 
 class WebRTCClient:
-    def __init__(self, id_: int, peer_id: str | int, config: dict):
-        global logger
+    def __init__(self, id_: int, peer_id: str | int, config: dict, logger):
         self.id_ = id_
         self.peer_id = peer_id
         self.websocket = None

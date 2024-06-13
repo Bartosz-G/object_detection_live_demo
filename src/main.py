@@ -27,21 +27,11 @@ import logging
 from time import perf_counter, sleep
 
 from services.webrtcclient import WebRTCClient
-
-
-
-HEIGHT = 480
-WIDTH = 480
-FORMAT = 'RGB'
-MODEL_PATH = 'rtdetr480_neuron.pt'
-SERVER_CORE_AFFINITY = None
-MODEL_CORE_AFFINITY = None
-TOPK = 10
+from config import CONFIG
 
 
 class PredictionTask:
-    def __init__(self, config: dict):
-        global logger
+    def __init__(self, config: dict, logger):
         self.logger = logger
         self.config = config
         self.height = config.get('height', 480)
@@ -113,7 +103,7 @@ class PredictionTask:
             buffer = sample.get_buffer()
             _, map_info = buffer.map(Gst.MapFlags.READ)
 
-            frame = np.frombuffer(map_info.data, dtype=np.uint8).reshape((HEIGHT, WIDTH, 3)) / 255
+            frame = np.frombuffer(map_info.data, dtype=np.uint8).reshape((self.height, self.width, 3)) / 255
             buffer.unmap(map_info)
 
             frame = np.transpose(frame, (2, 0, 1))
@@ -137,10 +127,11 @@ class PredictionTask:
 
 
 class PredictionSender:
-    def __init__(self, postprocessor, webrtc, queue):
+    def __init__(self, postprocessor, webrtc, queue, logger):
         self.postprocessor = postprocessor
         self.webrtc = webrtc
         self.queue = queue
+        self.logger = logger
 
     def __call__(self, *args, **kwargs):
         while True:
@@ -178,9 +169,8 @@ def postprocessing_task(prediction_sender, *args, **kwargs):
 
 
 class PostProcessor:
-    def __init__(self, topk):
-        global logger
-        self.topk = topk
+    def __init__(self, config: dict, logger):
+        self.topk = config.get('topk', 10)
         self.logger = logger
 
 
@@ -227,6 +217,8 @@ async def lifespan(app: FastAPI):
     global prediction_task
     global logger
     logger = logging.getLogger("uvicorn")
+    logger.setLevel(logging.DEBUG)
+
     def log_assertions(exc_type, exc_value, exc_traceback):
         if issubclass(exc_type, AssertionError):
             logger.critical("", exc_info=(exc_type, exc_value, exc_traceback))
@@ -239,8 +231,8 @@ async def lifespan(app: FastAPI):
 
     Gst.init(None)
 
-    webrtc = WebRTCClient(1, 1, {})
-    prediction_task = PredictionTask(config={})
+    webrtc = WebRTCClient(1, 1, {}, logger=logger)
+    prediction_task = PredictionTask(config={}, logger=logging)
 
 
     yield
@@ -276,10 +268,10 @@ async def websocket_endpoint(websocket: WebSocket):
     websocket_connection = websocket
     webrtc.set_websocket(websocket = websocket_connection)
 
-    postprocessor = PostProcessor(topk=TOPK)
-    prediction_sender = PredictionSender(postprocessor=postprocessor, webrtc=webrtc, queue=data_queue)
+    postprocessor = PostProcessor(config=CONFIG, logger=logger)
+    prediction_sender = PredictionSender(postprocessor=postprocessor, webrtc=webrtc, queue=data_queue, logger=logger)
 
-    threading.Thread(target=postprocessing_task, kwargs={'prediction_sender': prediction_sender}, daemon=True).start()
+    threading.Thread(target=prediction_sender, daemon=True).start()
 
     appsink = webrtc.get_appsink()
 
