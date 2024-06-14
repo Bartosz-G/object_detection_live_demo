@@ -120,9 +120,16 @@ class WebRTCClient:
         conv.link(capsfilter)
         capsfilter.link(self.appsink)
         #TODO: Log all of the elements of the pipeline
+        self.logger.debug(f'[WebRTCClient] - on_decodebin_added: connecting the bus')
+
+        self.bus = self.pipeline.get_bus()
+        self.bus.add_signal_watch()
+        self.bus.connect("message", self.on_bus_message)
 
         self.logger.debug(f'[WebRTCClient] - on_decodebin_added: setting pipeline to playing')
         self.pipeline.set_state(Gst.State.PLAYING)
+
+
 
     def on_stream_added(self, _, pad):
         self.logger.debug(f'[WebRTCClient]: on_stream_added called')
@@ -157,6 +164,30 @@ class WebRTCClient:
         self.logger.debug(f"[WebRTCClient] - on_data_channel: received")
         # data_channel.connect("notify::ready-state", self.on_data_channel_open)
         data_channel.connect("on-open", self.on_data_channel_ready)
+
+    def on_bus_message(self, _, message):
+        t = message.type
+        if t == Gst.MessageType.EOS:
+            self.logger.info(f'[gstreamer]: end of stream')
+        elif t == Gst.MessageType.ERROR:
+            err, debug = message.parse_error()
+            self.logger.error(f'[gstreamer] - {message.src.get_name()}: {err}')
+            self.logger.debug(f'[gstreamer] - {message.src.get_name()}: debug information: {debug}')
+        elif t == Gst.MessageType.WARNING:
+            warn, debug = message.parse_warning()
+            self.logger.warning(f'[gstreamer] - {message.src.get_name()}: {warn}')
+            self.logger.debug(f'[gstreamer] - {message.src.get_name()}: debug information: {debug}')
+        elif t == self.logger.Gst.MessageType.INFO:
+            info, debug = message.parse_info()
+            self.logger.info(f'[gstreamer] - {message.src.get_name()}: {info}')
+            self.logger.debug(f'[gstreamer] - {message.src.get_name()}: {debug}')
+        elif t == Gst.MessageType.DEBUG:
+            debug, = message.parse_debug()
+            self.logger.debug(f'[gstreamer] - {message.src.get_name()}: {debug}')
+        else:
+            self.logger.warning(f'[gstreamer]: received a bus message with an unknown type {t}')
+
+        return True
 
 
     def receive_message(self, msg):
