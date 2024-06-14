@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, HTTPException, WebSocket
+from fastapi import FastAPI, Request, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import HTMLResponse
@@ -39,11 +39,11 @@ class PredictionTask:
         self.width = config.get('width', 480)
         self.model = torch.jit.load(config.get('model_path', 'models/rtdetr480_neuron.pt'))
 
-    def __call__(self, appsink, queue, *args, **kwargs):
+    def __call__(self, appsink, queue, stop_event, *args, **kwargs):
         self.logger.info(f'[PredictionTask]: initiated')
 
 
-        while True:
+        while not stop_event.is_set():
             sample = appsink.emit("pull-sample")
             if sample is None:
                 sleep(1)
@@ -94,7 +94,7 @@ class PredictionTask:
             break
 
         self.logger.info(f'[PredictionTask]: starting continous detection process')
-        while True:
+        while not stop_event.is_set():
 
             sample = appsink.emit("pull-sample")
             if sample is None:
@@ -134,8 +134,8 @@ class PredictionSender:
         self.queue = queue
         self.logger = logger
 
-    def __call__(self, *args, **kwargs):
-        while True:
+    def __call__(self, stop_event, *args, **kwargs):
+        while not stop_event.is_set():
             msg = self.queue.get()
             state = msg['state']
 
@@ -218,7 +218,7 @@ def encode_predictions(latency, labels, bboxes):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global webrtc
+    # global webrtc
     global prediction_task
     global logger
     logger = logging.getLogger("uvicorn")
@@ -236,13 +236,12 @@ async def lifespan(app: FastAPI):
 
     Gst.init(None)
 
-    webrtc = WebRTCClient(1, 1, {}, logger=logger)
     prediction_task = PredictionTask(config={}, logger=logger)
 
 
     yield
 
-    webrtc.pipeline.set_state(Gst.State.NULL)
+    # webrtc.pipeline.set_state(Gst.State.NULL)
 
 
 
@@ -273,36 +272,50 @@ async def get(request: Request):
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket):
     global logger
-    global webrtc
+    # global webrtc
     global prediction_task
     await websocket.accept()
-    data_queue = queue.Queue()
+    try:
+        data_queue = queue.Queue()
 
-    websocket_connection = websocket
-    webrtc.set_websocket(websocket = websocket_connection)
+        webrtc = WebRTCClient(1, 1, {}, logger=logger)
+        websocket_connection = websocket
+        webrtc.set_websocket(websocket = websocket_connection)
 
-    postprocessor = PostProcessor(config=CONFIG, logger=logger)
-    prediction_sender = PredictionSender(postprocessor=postprocessor, webrtc=webrtc, queue=data_queue, logger=logger)
+        stop_event = threading.Event()
+        postprocessor = PostProcessor(config=CONFIG, logger=logger)
+        prediction_sender = PredictionSender(postprocessor=postprocessor, webrtc=webrtc, queue=data_queue, logger=logger)
+        appsink = webrtc.get_appsink()
 
-    threading.Thread(target=prediction_sender, daemon=True).start()
+        sender_thread = threading.Thread(target=prediction_sender, kwargs={'stop_event': stop_event})
+        prediction_thread = threading.Thread(target=prediction_task, kwargs={'appsink': appsink,
+                                                                             'queue': data_queue,
+                                                                             'stop_event': stop_event})
 
-    appsink = webrtc.get_appsink()
+        sender_thread.start()
+        prediction_thread.start()
 
-    threading.Thread(target=prediction_task, kwargs={'appsink': appsink, 'queue': data_queue}, daemon=True).start()
+        logger.info(f'[websocket_endpoint]: listening for connections...')
 
-    logger.info(f'[websocket_endpoint]: listening for connections...')
+        while True:
+            data = await websocket_connection.receive_text()
 
-    while True:
-        data = await websocket_connection.receive_text()
+            if data == 'PING':
+                logger.info(f'[websocket_endpoint]: received a message: {data}')
+                webrtc.pipeline.set_state(Gst.State.PLAYING)
+                logger.debug(f'[websocket_endpoint]: gstreamer pipeline set to playing')
+                continue
 
-        if data == 'PING':
-            logger.info(f'[websocket_endpoint]: received a message: {data}')
-            webrtc.pipeline.set_state(Gst.State.PLAYING)
-            logger.debug(f'[websocket_endpoint]: gstreamer pipeline set to playing')
-            continue
+            msg = json.loads(data)
+            webrtc.receive_message(msg)
+    except WebSocketDisconnect:
+        logger.info(f'[websocket_endpoint]: user disconnected')
+        stop_event.set()
+        sender_thread.join()
+        prediction_thread.join()
+        webrtc.pipeline.set_state(Gst.State.NULL)
+        logger.info(f'[websocket_endpoint]: disconnection cleanup complete')
 
-        msg = json.loads(data)
-        webrtc.receive_message(msg)
 
 
 
