@@ -210,9 +210,14 @@ class PostProcessor:
                 bbox_pred = torch.clamp(bbox_pred, min=0, max=1)
 
                 scores = torch.sigmoid(logits)
+
                 if torch.isnan(scores).any().item():
                     self.logger.warning(f'[PostProcessor]: scores became NaN after sigmoid conversion!')
                 scores, index = torch.topk(scores.flatten(1), self.topk, axis=-1)
+                index = index[scores >= self.confidence]
+                # self.logger.debug(f'[PostProcessor]: scores - {scores} ')
+                # self.logger.debug(f'[PostProcessor]: scores - {scores.size()} ')
+                # self.logger.debug(f'[PostProcessor]: index - {index.size()} ')
                 labels = index % 80
                 index = index // 80
                 bboxes = bbox_pred.gather(dim=1, index=index.unsqueeze(-1).repeat(1, 1, bbox_pred.shape[-1])).squeeze(0).numpy().astype(np.float32)
@@ -278,15 +283,13 @@ app.mount("/static", StaticFiles(directory="/home/ubuntu/src/static"), name="sta
 
 
 
-
-
-
 @app.get("/", response_class=HTMLResponse)
 async def get(request: Request):
     context = {
         'request': request,
         'stun': CONFIG.get('stun', 'stun://stun.kinesisvideo.eu-west-2.amazonaws.com:443'),
         'topk': CONFIG.get('topk', 10),
+        'confidence': CONFIG.get('confidence', 0.25),
         'classifywidth': '{'+f' exact: {CONFIG.get("width", 480)}'+'} ',
         'classifyheight': '{' + f' exact: {CONFIG.get("height", 480)} ' + '}',
         'classifyframerate': '{' + f' exact: {CONFIG.get("frameRate", 20)} ' + '}'

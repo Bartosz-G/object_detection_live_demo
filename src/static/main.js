@@ -1,11 +1,3 @@
-// WebRTC variables
-// const stunServers = [
-//     {
-//         urls: ['stun:stun.kinesisvideo.eu-west-2.amazonaws.com:443', 'stun.l.google.com']
-//     }
-// ];
-
-
 let localStream;
 let peerConnection;
 const worker = new Worker('/static/worker.js');
@@ -24,8 +16,6 @@ var client_id = Date.now();
 let websocket_url = 'ws://' + window.location.hostname + `:80/ws/${client_id}`;
 
 
-
-
 // Control flow variables
 const topClassesSlider = document.getElementById('topClasses');
 const topClassesValue = document.getElementById('topClassesValue');
@@ -35,19 +25,14 @@ const fontSizeSlider = document.getElementById('fontSize');
 const fontSizeValue = document.getElementById('fontSizeValue');
 const colorDropdown = document.getElementById('color');
 
-const defaultTopClasses = 100;
-const defaultLineWidth = 5;
-const defaultFontSize = 5;
-const defaultColor = 'red';
 
-
-topClassesSlider.value = defaultTopClasses;
-topClassesValue.value = defaultTopClasses;
-lineWidthSlider.value = defaultLineWidth;
-lineWidthValue.value = defaultLineWidth;
-fontSizeSlider.value = defaultFontSize;
-fontSizeValue.value = defaultFontSize;
-colorDropdown.value = defaultColor;
+topClassesSlider.value = defaultParams.topk;
+topClassesValue.value = defaultParams.topk;
+lineWidthSlider.value = defaultParams.lineWidth;
+lineWidthValue.value = defaultParams.lineWidth;
+fontSizeSlider.value = defaultParams.fontSize;
+fontSizeValue.value = defaultParams.fontSize;
+colorDropdown.value = defaultParams.color;
 
 // Control flow code
 let validateInput = (inputElement, sliderElement, minValue, maxValue) => {
