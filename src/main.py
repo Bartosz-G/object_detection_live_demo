@@ -195,7 +195,7 @@ class PostProcessor:
 
                 if 'confidence' in msg:
                     new_confidence = float(msg['confidence'])
-                    assert 0 < new_confidence <= 1, f'Invalid change parameters: {new_confidence}'
+                    assert 0 <= new_confidence <= 1, f'Invalid change parameters: {new_confidence}'
                     self.confidence = new_confidence
                     return None
 

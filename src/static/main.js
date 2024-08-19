@@ -30,11 +30,13 @@ const fontSizeSlider = document.getElementById('fontSize');
 const fontSizeValue = document.getElementById('fontSizeValue');
 const colorDropdown = document.getElementById('color');
 
+const defaultConfidence = defaultParams.confidence * 100;
+
 
 topClassesSlider.value = defaultParams.topk;
 topClassesValue.value = defaultParams.topk;
-confidenceSlider.value = defaultParams.confidence;
-confidenceValue.value = defaultParams.confidence;
+confidenceSlider.value = defaultConfidence;
+confidenceValue.value = defaultConfidence;
 lineWidthSlider.value = defaultParams.lineWidth;
 lineWidthValue.value = defaultParams.lineWidth;
 fontSizeSlider.value = defaultParams.fontSize;
@@ -78,7 +80,7 @@ topClassesSlider.addEventListener('input', (e) => {
 confidenceSlider.addEventListener('input', (e) => {
     const confidence = e.target.value;
     confidenceValue.value = confidence;
-    const changeMsg = {'state': 'change', 'change': {'confidence': confidence}};
+    const changeMsg = {'state': 'change', 'change': {'confidence': confidence / 100}};
     sendMessage(JSON.stringify(changeMsg));
 });
 
@@ -105,8 +107,8 @@ topClassesValue.addEventListener('input', (e) => {
 confidenceValue.addEventListener('input', (e) => {
    const confidence = e.target.value;
    confidenceSlider.value = confidence;
-   const changeMsg = {'state': 'change', 'change': {'confidence': confidence}};
-    sendMessage(JSON.stringify(changeMsg));
+   const changeMsg = {'state': 'change', 'change': {'confidence': confidence / 100}};
+   sendMessage(JSON.stringify(changeMsg));
 });
 
 lineWidthValue.addEventListener('input', (e) => {
@@ -124,7 +126,7 @@ fontSizeValue.addEventListener('input', (e) => {
 validateInput(topClassesValue, topClassesSlider, 1, 300);
 validateInput(lineWidthValue, lineWidthSlider, 0, 10);
 validateInput(fontSizeValue, fontSizeSlider, 0, 10);
-validateInput(confidenceValue, confidenceSlider, 0, 1);
+validateInput(confidenceValue, confidenceSlider, 0, 100);
 
 
 colorDropdown.addEventListener('change', (e) => {
