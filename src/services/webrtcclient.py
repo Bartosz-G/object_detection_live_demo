@@ -26,9 +26,12 @@ class WebRTCClient:
         self.width = config.get('width', 480)
         self.format = config.get('format', 'RGB')
         self.stun = config.get('stun', 'stun://stun.kinesisvideo.eu-west-2.amazonaws.com:443')
+        self.jitter_buffer = config.get('jitter_buffer', 10)
 
         self.webrtcbin = Gst.ElementFactory.make("webrtcbin", "webrtcbin")
         self.appsink = Gst.ElementFactory.make("appsink", "appsink")
+        self.rtpbin = self.webrtcbin.get_by_name('rtpbin')
+        self.rtpbin.set_property("latency", self.jitter_buffer)
 
         self.webrtcbin.set_property("stun-server", "stun://stun.kinesisvideo.eu-west-2.amazonaws.com:443")
 

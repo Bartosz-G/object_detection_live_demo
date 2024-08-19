@@ -5,5 +5,6 @@ CONFIG = {
     'topk': 10,
     'format': 'RGB',
     'model_path': 'models/rtdetr480_neuron.pt',
-    'stun': 'stun://stun.kinesisvideo.eu-west-2.amazonaws.com:443'
+    'stun': 'stun://stun.kinesisvideo.eu-west-2.amazonaws.com:443',
+    'jitter_buffer': 10
 }

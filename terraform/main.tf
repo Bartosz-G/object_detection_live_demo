@@ -5,7 +5,7 @@ terraform {
       version = "~> 5.0"
     }
     ansible = {
-      version = "~> 1.1.0"
+      version = "~> 1.3.0"
       source  = "ansible/ansible"
     }
   }
@@ -122,7 +122,7 @@ resource "ansible_host" "webserver1" {
 
 
 resource "ansible_playbook" "setup_gstreamer" {
-  playbook   = "/ansible_playbooks/setup_gstreamer.yml"
+  playbook   = "./ansible_playbooks/setup_gstreamer.yml"
   name       = ansible_group.webservers.name
   replayable = true
   ignore_playbook_failure = true
@@ -130,6 +130,7 @@ resource "ansible_playbook" "setup_gstreamer" {
 
   depends_on = [module.webserver1]
 }
+
 
 
 
