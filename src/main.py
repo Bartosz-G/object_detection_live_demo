@@ -167,10 +167,6 @@ class PredictionSender:
                     process_total = (process_te - process_ts) * 1000
                     self.logger.info(f'[PredictionSender]: total process time {process_total}ms')
 
-            if state == 'change':
-                change_config = msg['change']
-                self.postprocessor.set(change_config)
-
 
 
 def postprocessing_task(prediction_sender, *args, **kwargs):
@@ -185,41 +181,44 @@ class PostProcessor:
         self.topk = config.get('topk', 10)
         self.confidence = config.get('confidence', 0.25)
         self.logger = logger
+        self.lock = threading.Lock()
 
     def set(self, msg):
-        self.logger.debug(f'[PostProcessor]: received new configuration: {msg}')
-        try:
-            if 'topk' in msg:
-                new_top_k_value = int(msg['topk'])
-                assert 0 < new_top_k_value <= 300, f'Invalid change parameters: {new_top_k_value}'
-                self.topk = new_top_k_value
-                return None
+        with self.lock:
+            self.logger.debug(f'[PostProcessor]: received new configuration: {msg}')
+            try:
+                if 'topk' in msg:
+                    new_top_k_value = int(msg['topk'])
+                    assert 0 < new_top_k_value <= 300, f'Invalid change parameters: {new_top_k_value}'
+                    self.topk = new_top_k_value
+                    return None
 
-            if 'confidence' in msg:
-                new_confidence = float(msg['confidence'])
-                assert 0 < new_confidence <= 1, f'Invalid change parameters: {new_confidence}'
-                self.confidence = new_confidence
-                return None
+                if 'confidence' in msg:
+                    new_confidence = float(msg['confidence'])
+                    assert 0 < new_confidence <= 1, f'Invalid change parameters: {new_confidence}'
+                    self.confidence = new_confidence
+                    return None
 
-        except Exception as e:
-            self.logger.debug(f'[PostProcessor]: Error changing configuration: {e}')
+            except Exception as e:
+                self.logger.debug(f'[PostProcessor]: Error changing configuration: {e}')
 
     def __call__(self, logits, boxes, *args, **kwargs):
-        with torch.no_grad():
-            bbox_pred = box_convert(boxes, in_fmt='cxcywh', out_fmt='xywh')
-            self.logger.debug(f'[PostProcessor]: after box conversion {bbox_pred[0, :3, :]}')
-            bbox_pred = torch.clamp(bbox_pred, min=0, max=1)
+        with self.lock:
+            with torch.no_grad():
+                bbox_pred = box_convert(boxes, in_fmt='cxcywh', out_fmt='xywh')
+                self.logger.debug(f'[PostProcessor]: after box conversion {bbox_pred[0, :3, :]}')
+                bbox_pred = torch.clamp(bbox_pred, min=0, max=1)
 
-            scores = torch.sigmoid(logits)
-            if torch.isnan(scores).any().item():
-                self.logger.warning(f'[PostProcessor]: scores became NaN after sigmoid conversion!')
-            scores, index = torch.topk(scores.flatten(1), self.topk, axis=-1)
-            labels = index % 80
-            index = index // 80
-            bboxes = bbox_pred.gather(dim=1, index=index.unsqueeze(-1).repeat(1, 1, bbox_pred.shape[-1])).squeeze(0).numpy().astype(np.float32)
-            labels = labels.flatten().numpy().astype(np.uint8)
-            self.logger.debug(f'[PostProcessor]: sending labels {labels[:3]}')
-            return labels, bboxes
+                scores = torch.sigmoid(logits)
+                if torch.isnan(scores).any().item():
+                    self.logger.warning(f'[PostProcessor]: scores became NaN after sigmoid conversion!')
+                scores, index = torch.topk(scores.flatten(1), self.topk, axis=-1)
+                labels = index % 80
+                index = index // 80
+                bboxes = bbox_pred.gather(dim=1, index=index.unsqueeze(-1).repeat(1, 1, bbox_pred.shape[-1])).squeeze(0).numpy().astype(np.float32)
+                labels = labels.flatten().numpy().astype(np.uint8)
+                self.logger.debug(f'[PostProcessor]: sending labels {labels[:3]}')
+                return labels, bboxes
 
 
 
@@ -338,7 +337,8 @@ async def websocket_endpoint(websocket: WebSocket):
             if 'state' in msg:
                 state = msg['state']
                 if state == 'change':
-                    data_queue.put(msg)
+                    change_config = msg.get('change', {})
+                    postprocessor.set(change_config)
 
 
 

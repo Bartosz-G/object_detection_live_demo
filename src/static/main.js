@@ -79,7 +79,8 @@ let validateInput = (inputElement, sliderElement, minValue, maxValue) => {
 topClassesSlider.addEventListener('input', (e) => {
     const topClasses = e.target.value;
     topClassesValue.value = topClasses;
-    //TODO: Implement sending to the backend
+    const changeMsg = {'state': 'change', 'change': {'topk': topClasses}}
+    sendMessage(JSON.stringify(changeMsg))
 });
 
 lineWidthSlider.addEventListener('input', (e) => {
@@ -98,7 +99,8 @@ fontSizeSlider.addEventListener('input', (e) => {
 topClassesValue.addEventListener('input', (e) => {
     const topClasses = e.target.value;
     topClassesSlider.value = topClasses;
-    //TODO: Implement sending to the backend
+    const changeMsg = {'state': 'change', 'change': {'topk': topClasses}}
+    sendMessage(JSON.stringify(changeMsg))
 });
 
 lineWidthValue.addEventListener('input', (e) => {
@@ -127,11 +129,6 @@ worker.onmessage = (e) => {
     console.log('[worker]: ', message)
 };
 
-topClassesSlider.addEventListener('input', (e) => {
-    const topClasses = e.target.value;
-    console.log('Top Classes:', topClasses);
-    //TODO: Implement sending over to the backend through a websocket and adjusting the topk for preprocessor
-});
 
 lineWidthSlider.addEventListener('input', (e) => {
     const lineWidth = e.target.value;
