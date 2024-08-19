@@ -38,6 +38,7 @@ class PredictionTask:
         self.height = config.get('height', 480)
         self.width = config.get('width', 480)
         self.model = torch.jit.load(config.get('model_path', 'models/rtdetr480_neuron.pt'))
+        self.jitter_buffer = config.get('jitter_buffer', 10)
 
     def __call__(self, appsink, queue, stop_event, *args, **kwargs):
         self.logger.info(f'[PredictionTask]: initiated')
@@ -82,6 +83,7 @@ class PredictionTask:
             te = perf_counter()
             latency = (te - ts) * 1000
             self.logger.info(f'[PredictionTask] warmup frame latency: {latency}')
+            latency += self.jitter_buffer
 
             msg = {'state':'cls',
                     'cls': {'latency': latency,
@@ -116,6 +118,7 @@ class PredictionTask:
             te = perf_counter()
             latency = (te - ts) * 1000
             self.logger.info(f'[PredictionTask] detection process: latency {latency}ms')
+            latency += self.jitter_buffer
 
             msg = {'state':'cls',
                     'cls': {'latency': latency,
@@ -162,7 +165,11 @@ class PredictionSender:
                 if process_ts:
                     process_te = perf_counter()
                     process_total = (process_te - process_ts) * 1000
-                    self.logger.info(f'[PredictionSender]: total process time {process_total}ms ')
+                    self.logger.info(f'[PredictionSender]: total process time {process_total}ms')
+
+            if state == 'change':
+                change_config = msg['change']
+                self.postprocessor.set(change_config)
 
 
 
@@ -176,8 +183,26 @@ def postprocessing_task(prediction_sender, *args, **kwargs):
 class PostProcessor:
     def __init__(self, config: dict, logger):
         self.topk = config.get('topk', 10)
+        self.confidence = config.get('confidence', 0.25)
         self.logger = logger
 
+    def set(self, msg):
+        self.logger.debug(f'[PostProcessor]: received new configuration: {msg}')
+        try:
+            if 'topk' in msg:
+                new_top_k_value = int(msg['topk'])
+                assert 0 < new_top_k_value <= 300, f'Invalid change parameters: {new_top_k_value}'
+                self.topk = new_top_k_value
+                return None
+
+            if 'confidence' in msg:
+                new_confidence = float(msg['confidence'])
+                assert 0 < new_confidence <= 1, f'Invalid change parameters: {new_confidence}'
+                self.confidence = new_confidence
+                return None
+
+        except Exception as e:
+            self.logger.debug(f'[PostProcessor]: Error changing configuration: {e}')
 
     def __call__(self, logits, boxes, *args, **kwargs):
         with torch.no_grad():
@@ -272,13 +297,12 @@ async def get(request: Request):
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket):
     global logger
-    # global webrtc
     global prediction_task
     await websocket.accept()
     try:
         data_queue = queue.Queue()
 
-        webrtc = WebRTCClient(1, 1, {}, logger=logger)
+        webrtc = WebRTCClient(1, 1, CONFIG, logger=logger)
         websocket_connection = websocket
         webrtc.set_websocket(websocket = websocket_connection)
 
@@ -307,7 +331,17 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             msg = json.loads(data)
-            webrtc.receive_message(msg)
+
+            if 'offer' in msg or 'ice' in msg:
+                webrtc.receive_message(msg)
+
+            if 'state' in msg:
+                state = msg['state']
+                if state == 'change':
+                    data_queue.put(msg)
+
+
+
     except WebSocketDisconnect:
         logger.info(f'[websocket_endpoint]: user disconnected')
         stop_event.set()

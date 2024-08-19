@@ -5,7 +5,6 @@
 //     }
 // ];
 
-// const ip = '13.42.36.213';
 
 let localStream;
 let peerConnection;
@@ -283,7 +282,6 @@ let init = async () => {
     }
 
     peerConnection = new RTCPeerConnection( stunServers );
-
 
     localStream.getVideoTracks().forEach((track) => {
             track.applyConstraints(classifyDimensions)
