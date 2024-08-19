@@ -19,6 +19,11 @@ let websocket_url = 'ws://' + window.location.hostname + `:80/ws/${client_id}`;
 // Control flow variables
 const topClassesSlider = document.getElementById('topClasses');
 const topClassesValue = document.getElementById('topClassesValue');
+
+const confidenceSlider = document.getElementById('confidence');
+const confidenceValue = document.getElementById('confidenceValue');
+
+
 const lineWidthSlider = document.getElementById('lineWidth');
 const lineWidthValue = document.getElementById('lineWidthValue');
 const fontSizeSlider = document.getElementById('fontSize');
@@ -28,6 +33,8 @@ const colorDropdown = document.getElementById('color');
 
 topClassesSlider.value = defaultParams.topk;
 topClassesValue.value = defaultParams.topk;
+confidenceSlider.value = defaultParams.confidence;
+confidenceValue.value = defaultParams.confidence;
 lineWidthSlider.value = defaultParams.lineWidth;
 lineWidthValue.value = defaultParams.lineWidth;
 fontSizeSlider.value = defaultParams.fontSize;
@@ -68,6 +75,13 @@ topClassesSlider.addEventListener('input', (e) => {
     sendMessage(JSON.stringify(changeMsg))
 });
 
+confidenceSlider.addEventListener('input', (e) => {
+    const confidence = e.target.value;
+    confidenceValue.value = confidence;
+    const changeMsg = {'state': 'change', 'change': {'confidence': confidence}};
+    sendMessage(JSON.stringify(changeMsg));
+});
+
 lineWidthSlider.addEventListener('input', (e) => {
     const lineWidth = e.target.value;
     lineWidthValue.value = lineWidth;
@@ -84,8 +98,15 @@ fontSizeSlider.addEventListener('input', (e) => {
 topClassesValue.addEventListener('input', (e) => {
     const topClasses = e.target.value;
     topClassesSlider.value = topClasses;
-    const changeMsg = {'state': 'change', 'change': {'topk': topClasses}}
-    sendMessage(JSON.stringify(changeMsg))
+    const changeMsg = {'state': 'change', 'change': {'topk': topClasses}};
+    sendMessage(JSON.stringify(changeMsg));
+});
+
+confidenceValue.addEventListener('input', (e) => {
+   const confidence = e.target.value;
+   confidenceSlider.value = confidence;
+   const changeMsg = {'state': 'change', 'change': {'confidence': confidence}};
+    sendMessage(JSON.stringify(changeMsg));
 });
 
 lineWidthValue.addEventListener('input', (e) => {
@@ -100,9 +121,11 @@ fontSizeValue.addEventListener('input', (e) => {
     worker.postMessage({ type: 'changeFontSize', fontSizeNew: fontSize});
 });
 
-validateInput(topClassesValue, topClassesSlider, 5, 300);
+validateInput(topClassesValue, topClassesSlider, 1, 300);
 validateInput(lineWidthValue, lineWidthSlider, 0, 10);
 validateInput(fontSizeValue, fontSizeSlider, 0, 10);
+validateInput(confidenceValue, confidenceSlider, 0, 1);
+
 
 colorDropdown.addEventListener('change', (e) => {
     const colour = e.target.value;
