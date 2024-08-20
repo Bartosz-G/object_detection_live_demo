@@ -123,6 +123,7 @@ self.onmessage = (e) => {
         latency = lat
         labels = lbls
         boundingBoxes = bboxes
+        console.log('bboxes :', bboxes);
         drawBbox();
     } else if (type === 'changeLineWidth') {
         lineSlider = lineWidthNew / lineWidthRatio;
@@ -152,7 +153,6 @@ let decodeBuffer = (buffer) => {
     offset += 1;
 
     const numLabels = view.getUint32(offset, true);
-    offset += 4;
 
     const numBboxes = view.getUint32(offset, true) / 16;
     offset += 4;
@@ -164,7 +164,7 @@ let decodeBuffer = (buffer) => {
     }
 
     const bboxes = [];
-    for (let i = 0; i < numBboxes - 1; i++) {
+    for (let i = 0; i <= numBboxes - 1; i++) {
         const bbox = [];
         // postMessage({message: offset})
         for (let j = 0; j < 4; j++) {
@@ -190,12 +190,15 @@ let adjustCanvasSize = () => {
 }
 
 let drawBbox = () => {
-    if (!boundingBoxes || !labels) {
-        console.error('Bounding boxes or classes are undefined.');
+    if (!latency) {
+        // Means backend isn't processing yet
         return;
     }
 
-    ctx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+        if (!boundingBoxes || !labels) {
+        console.error('Bounding boxes or classes are undefined.');
+        return;
+    }
 
     ctx.lineWidth = lineWidth;
     ctx.strokeStyle = strokeStyle;
@@ -205,8 +208,9 @@ let drawBbox = () => {
 
     const canvasWidth = offscreenCanvas.width;
     const canvasHeight = offscreenCanvas.height;
-    // const centerX = offscreenCanvas.width / 2;
-    // const centerY = offscreenCanvas.height / 2;
+
+
+    ctx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
 
 
     boundingBoxes.forEach((coords, index) => {
@@ -222,6 +226,7 @@ let drawBbox = () => {
             ctx.fillText(classes, x * canvasWidth, y * canvasHeight - offsetClassText);
         }
     });
+
     const latencyText = `${latency}ms`
     const latencyTextSize = ctx.measureText(latencyText);
     ctx.fillText(latencyText, canvasWidth - latencyTextSize.width, latencyTextSize.actualBoundingBoxAscent + latencyTextSize.actualBoundingBoxDescent);
