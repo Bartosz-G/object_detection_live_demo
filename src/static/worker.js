@@ -94,7 +94,7 @@ let lineSlider = 0.005;
 let strokeStyle = 'red';
 let fontSize;
 let fontSlider = 0.05;
-let streamoverlay = document.getElementById('streamoverlay');
+
 
 
 self.onmessage = (e) => {
@@ -199,8 +199,8 @@ let drawBbox = () => {
 
     ctx.lineWidth = lineWidth;
     ctx.strokeStyle = strokeStyle;
-    ctx.font = `${fontSize}px ${strokeStyle} Arial`;
-    ctx.fillStyle = 'red';
+    ctx.font = `${fontSize}px Arial`;
+    ctx.fillStyle = strokeStyle;
     let offsetClassText = fontSize * 0.1
 
     const canvasWidth = offscreenCanvas.width;

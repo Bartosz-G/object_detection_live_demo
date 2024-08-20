@@ -15,6 +15,9 @@ let websocket;
 var client_id = Date.now();
 let websocket_url = 'ws://' + window.location.hostname + `:80/ws/${client_id}`;
 
+let streamWindow = document.getElementById('stream-window');
+let loaderAnimation = document.getElementById('loader');
+
 
 // Control flow variables
 const topClassesSlider = document.getElementById('topClasses');
@@ -301,6 +304,9 @@ let init = async () => {
     dataChannel = peerConnection.createDataChannel("DataChannel");
 
     dataChannel.onopen = () => {
+        streamWindow.classList.remove('video-overlay-showing');
+        loaderAnimation.style.display = 'none';
+
         console.log("Data channel is open");
         dataChannel.send("Hello from the client!");
     };
