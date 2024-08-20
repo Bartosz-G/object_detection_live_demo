@@ -153,6 +153,7 @@ let decodeBuffer = (buffer) => {
     offset += 1;
 
     const numLabels = view.getUint32(offset, true);
+    offset += 4;
 
     const numBboxes = view.getUint32(offset, true) / 16;
     offset += 4;
@@ -164,7 +165,7 @@ let decodeBuffer = (buffer) => {
     }
 
     const bboxes = [];
-    for (let i = 0; i <= numBboxes - 1; i++) {
+    for (let i = 0; i < numBboxes; i++) {
         const bbox = [];
         // postMessage({message: offset})
         for (let j = 0; j < 4; j++) {
